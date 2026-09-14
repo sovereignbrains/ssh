@@ -12,7 +12,7 @@ const MERGE_TIMEOUT_MS = 30 * 1000;
 
 function humanError(e) {
   const msg = String((e && e.message) || e || '');
-  if (e && e.code === 'reauth') return msg;
+  if (e && (e.code === 'reauth' || e.code === 'scope')) return msg;
   if (/fetch failed|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ECONNRESET|network/i.test(msg)) return 'Нет связи с Google Диском';
   if (e && e.status === 403) return 'Google Диск отказал в доступе: ' + msg;
   return msg.split('\n')[0].slice(0, 240);
@@ -110,7 +110,7 @@ module.exports = function registerSync({ ipcMain, app, shell, safeStorage, sendT
     lastRunAt = Date.now();
     running = cycle()
       .catch((e) => {
-        if (e && e.code === 'reauth') emit({ state: 'error', error: humanError(e) });
+        if (e && (e.code === 'reauth' || e.code === 'scope')) emit({ state: 'error', error: humanError(e) });
         else {
           if (!/Нет связи/.test(humanError(e))) logError('синхронизация', e);
           emit({ state: 'error', error: humanError(e) });

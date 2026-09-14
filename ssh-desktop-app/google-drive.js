@@ -13,7 +13,10 @@ const endpoints = {
   api: 'https://www.googleapis.com/drive/v3',
   upload: 'https://www.googleapis.com/upload/drive/v3',
 };
-const SCOPES = ['https://www.googleapis.com/auth/drive.file', 'openid', 'email'];
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const SCOPES = [DRIVE_SCOPE, 'openid', 'email'];
+// Google's consent screen lets the user untick Drive access and still sign in.
+const SCOPE_MSG = 'Google не дал доступ к Диску — войдите снова и отметьте галочку доступа к файлам Google Диска';
 const FOLDER_NAME = 'SSH Client';
 const FILE_NAME = 'secrets.vault';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -112,6 +115,10 @@ function createDrive({ app, shell, safeStorage, logError }) {
         try {
           const redirectUri = 'http://127.0.0.1:' + server.address().port;
           const tok = await tokenRequest({ code: url.searchParams.get('code'), code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: redirectUri });
+          if (!String(tok.scope || '').split(' ').includes(DRIVE_SCOPE)) {
+            revoke(tok.refresh_token || tok.access_token);
+            throw new DriveError(SCOPE_MSG, 403, 'scope');
+          }
           if (!tok.refresh_token) throw new DriveError('Google не выдал refresh-токен — попробуйте войти ещё раз');
           auth = { refreshToken: tok.refresh_token, email: emailFromIdToken(tok.id_token || '') };
           access = { token: tok.access_token, exp: Date.now() + (tok.expires_in || 3600) * 1000 - 60000 };
@@ -157,6 +164,14 @@ function createDrive({ app, shell, safeStorage, logError }) {
     const token = await accessToken(false);
     const r = await fetch(url, { ...opts, headers: { ...(opts && opts.headers), Authorization: 'Bearer ' + token } });
     if (r.status === 401 && !retried) { access = null; return request(url, opts, true); }
+    if (r.status === 403) {
+      const j = await r.clone().json().catch(() => ({}));
+      const reasons = ((j.error && j.error.details) || []).map((d) => d.reason).concat(((j.error && j.error.errors) || []).map((d) => d.reason));
+      if (reasons.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT') || reasons.includes('insufficientPermissions') || /insufficient authentication scopes/i.test((j.error && j.error.message) || '')) {
+        await logout();
+        throw new DriveError(SCOPE_MSG, 403, 'scope');
+      }
+    }
     return r;
   }
   async function json(url, opts) {
@@ -222,14 +237,17 @@ function createDrive({ app, shell, safeStorage, logError }) {
     if (!r.ok && r.status !== 404) throw new DriveError('Не удалось удалить копию: HTTP ' + r.status, r.status);
   }
 
+  async function revoke(token) {
+    if (!token) return;
+    try { await fetch(endpoints.revoke, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }) }); } catch {}
+  }
+
   async function logout() {
     const token = auth && auth.refreshToken;
     auth = null;
     access = null;
     try { fs.rmSync(authFile, { force: true }); } catch {}
-    if (token) {
-      try { await fetch(endpoints.revoke, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }) }); } catch {}
-    }
+    await revoke(token);
   }
 
   loadAuth();
