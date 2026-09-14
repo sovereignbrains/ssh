@@ -126,4 +126,5 @@ contextBridge.exposeInMainWorld('keysAPI', {
   generate: (type, passphrase, comment) => ipcRenderer.invoke('keys:generate', { type, passphrase, comment }),
   openFile: () => ipcRenderer.invoke('keys:open-file'),
   savePublic: (name, publicKey) => ipcRenderer.invoke('keys:save-public', { name, publicKey }),
+  install: (connId, publicKey) => ipcRenderer.invoke('keys:install', { connId, publicKey }),
 });

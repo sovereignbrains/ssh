@@ -827,3 +827,65 @@ html.in-tab .cl-pop{right:18px;bottom:76px}
 /* Notifications sit above the dock while it is on screen. */
 html:not(.in-tab) .toasts{bottom:98px}
 @media (max-width:880px){.nav-item{min-width:74px;padding:8px 10px 7px}}
+
+/* ---------------- TITLE BAR: its own band above the window content ---------------- */
+html[data-theme="edge"]{--tb-bg:#151619}
+html[data-theme="night"]{--tb-bg:#171614}
+.titlebar{background:var(--tb-bg);border-bottom:1px solid var(--glass-line);box-shadow:0 1px 0 #00000055}
+.stab-dot{border-color:var(--tb-bg)}
+.shell,.ws{padding-top:0}
+.ws{padding-top:8px}
+/* A segmented control in a form column keeps its natural width instead of stretching empty. */
+.field>.seg{align-self:flex-start}
+
+/* ---------------- KEYS: cards ---------------- */
+.kcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:start}
+.kcard{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0;padding:14px 14px 12px;border-radius:14px;text-align:left;
+  background:var(--glass);border:1px solid var(--glass-line);box-shadow:0 18px 40px -32px #000c;transition:border-color var(--tr),transform .22s cubic-bezier(.3,1.2,.5,1);animation:rowIn .34s cubic-bezier(.22,.85,.3,1) both}
+.kcard:hover{border-color:var(--line-2)}
+.kcard.dying{animation:rowOut .28s ease-in both}
+.kcard.k-new{align-items:center;justify-content:center;gap:8px;min-height:236px;cursor:pointer;background:transparent;border:1px dashed var(--line-2);color:var(--dim)}
+.kcard.k-new b{font-size:13.5px;color:var(--text);font-weight:600;margin-top:4px}
+.kcard.k-new small{font-size:11.5px;color:var(--dim-2)}
+.kcard.k-new:hover{border-color:var(--accent-line);background:var(--glass-soft);transform:translateY(-2px)}
+.kcard.k-new:hover .sc-new-ico{color:var(--accent);border-color:var(--accent-line);transform:rotate(90deg)}
+.k-top{display:flex;align-items:center;gap:12px;min-width:0}
+.k-ico{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;flex:0 0 auto;font-size:19px;color:#fff;box-shadow:0 10px 22px -12px #000}
+.k-ico.ed{background:linear-gradient(145deg,#2fc9ae,#1f8f9e)}
+.k-ico.rsa{background:linear-gradient(145deg,#8b6cf0,#5a45c4)}
+.k-ico.ecdsa{background:linear-gradient(145deg,#e59a4a,#c2622f)}
+.k-t{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:5px}
+.k-t b{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.k-t small{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim-2)}
+.k-pp{display:inline-flex;align-items:center;gap:4px;color:var(--warn)}
+.k-pp .ic{width:12px;height:12px}
+.k-acts{display:flex;gap:2px;flex:0 0 auto;opacity:.45;transition:opacity var(--tr)}
+.kcard:hover .k-acts{opacity:1}
+.k-fp{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 10px;border-radius:9px;background:var(--field);border:1px solid var(--glass-line);color:var(--dim);text-align:left;transition:var(--tr)}
+.k-fp .ic{width:14px;height:14px;flex:0 0 auto;color:var(--dim-2)}
+.k-fp span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-ligatures:none}
+.k-fp:hover{border-color:var(--line-2);color:var(--text)}
+.k-pub{border-radius:10px;background:#0f1012;border:1px solid var(--glass-line);overflow:hidden}
+html[data-theme="night"] .k-pub{background:#11100f}
+.k-pub-h{display:flex;align-items:center;justify-content:space-between;padding:6px 6px 6px 11px;border-bottom:1px solid var(--glass-line);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim-2);font-weight:700}
+.k-copy{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:7px;font-size:11.5px;font-weight:600;color:var(--dim);text-transform:none;letter-spacing:0;transition:var(--tr)}
+.k-copy .ic{width:13px;height:13px}
+.k-copy:hover{background:var(--btn-hover);color:var(--accent)}
+.k-pub code{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;padding:9px 11px;font-size:11px;line-height:1.55;color:#b9c0ca;word-break:break-all;font-variant-ligatures:none;user-select:all}
+.k-foot{display:flex;align-items:center;gap:10px;min-width:0;padding-top:2px}
+.k-used{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.k-used-l{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim-2);font-weight:700;margin-right:2px}
+.k-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 7px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--btn);border:1px solid var(--glass-line);white-space:nowrap}
+.k-chip .ic{width:13px;height:13px;color:var(--osc)}
+.k-foot .btn{flex:0 0 auto}
+
+/* «Добавить на сервер» */
+.ks-list{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;padding:2px}
+.ks-opt{display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px 9px 9px;border-radius:12px;text-align:left;background:var(--glass-soft);border:1px solid var(--glass-line);color:var(--text);transition:var(--tr)}
+.ks-opt:hover{border-color:var(--line-2);background:#ffffff0a}
+.ks-opt.on{border-color:var(--accent-line);background:var(--accent-soft)}
+.ks-t{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.ks-t b{font-size:13px;font-weight:600}
+.ks-t small{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ks-radio{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-2);flex:0 0 auto;transition:var(--tr)}
+.ks-opt.on .ks-radio{border-color:var(--accent);box-shadow:inset 0 0 0 3px var(--panel-2),inset 0 0 0 9px var(--accent)}

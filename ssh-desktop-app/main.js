@@ -388,6 +388,31 @@ function parseStats(out, prev, now) {
   return stats;
 }
 
+// Run a script through `sh -s` on the server; resolves with exit code and captured output, never rejects.
+function execScript(conn, script, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+    const timer = setTimeout(() => finish({ code: null, out: '', err: '', error: 'timeout' }), timeoutMs);
+    try {
+      conn.exec('sh -s', (err, stream) => {
+        if (err) return finish({ code: null, out: '', err: '', error: err.message });
+        let out = '';
+        let errOut = '';
+        let code = null;
+        stream.on('data', (d) => { if (out.length < 16384) out += d.toString('utf8'); });
+        stream.stderr.on('data', (d) => { if (errOut.length < 16384) errOut += d.toString('utf8'); });
+        stream.on('exit', (c) => { code = c; });
+        stream.on('close', () => finish({ code, out, err: errOut }));
+        stream.on('error', (e) => finish({ code: null, out, err: errOut, error: e.message }));
+        stream.end(script);
+      });
+    } catch (e) {
+      finish({ code: null, out: '', err: '', error: e.message });
+    }
+  });
+}
+
 function collectStats(entry) {
   if (entry.statsRun) return entry.statsRun;
   entry.statsRun = new Promise((resolve) => {
@@ -578,6 +603,37 @@ function registerSshHandlers() {
     if (entry && entry.stream && typeof entry.stream.setWindow === 'function') {
       entry.stream.setWindow(rows, cols, 0, 0);
     }
+  });
+
+  // ssh-copy-id: append a public key to ~/.ssh/authorized_keys of the connected user, unless it is already there.
+  ipcMain.handle('keys:install', async (event, { connId, publicKey }) => {
+    const entry = connections.get(connId);
+    if (!entry) return { ok: false, error: 'Сессия не подключена' };
+    const key = String(publicKey || '').trim();
+    if (!/^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp\d+|sk-[\w@.-]+) [A-Za-z0-9+/=]+( [^\r\n]*)?$/.test(key) || key.includes('SSHKEY_EOF')) {
+      return { ok: false, error: 'Некорректный публичный ключ' };
+    }
+    // The key travels inside a quoted heredoc, so its comment is never interpreted by the shell.
+    const script = [
+      'umask 077',
+      "K=$(cat <<'SSHKEY_EOF'",
+      key,
+      'SSHKEY_EOF',
+      ')',
+      'B=$(printf %s "$K" | cut -d " " -f 1-2)',
+      'D="$HOME/.ssh"; F="$D/authorized_keys"',
+      'mkdir -p "$D" && chmod 700 "$D" && touch "$F" && chmod 600 "$F" || { echo KEY_FAILED; exit 1; }',
+      'if grep -qF "$B" "$F"; then echo KEY_EXISTS; exit 0; fi',
+      'if [ -s "$F" ] && [ -n "$(tail -c 1 "$F")" ]; then echo >> "$F"; fi',
+      'printf "%s\\n" "$K" >> "$F" && echo KEY_ADDED',
+      '',
+    ].join('\n');
+    const r = await execScript(entry.conn, script, 15000);
+    if (/KEY_ADDED/.test(r.out)) return { ok: true, added: true };
+    if (/KEY_EXISTS/.test(r.out)) return { ok: true, added: false };
+    const detail = (r.err || r.out || r.error || '').trim().split('\n').pop();
+    logError('ключ на сервер', new Error(detail || 'exit ' + r.code));
+    return { ok: false, error: 'Не удалось записать ~/.ssh/authorized_keys' + (detail ? ': ' + detail.slice(0, 200) : '') };
   });
 
   ipcMain.handle('ssh:stats', async (event, { connId }) => {

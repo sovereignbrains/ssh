@@ -134,28 +134,10 @@
           <div class="view-head">
             <div>
               <h2><svg class="ic"><use href="#ic-key"/></svg> Ключи <span class="count-pill" id="cntKeys">0</span></h2>
-              <p class="sub">SSH-ключи хранятся в зашифрованном сейфе. Публичную часть можно выгрузить в authorized_keys на сервере.</p>
+              <p class="sub">SSH-ключи хранятся в зашифрованном сейфе. «Добавить на сервер» записывает публичную часть в authorized_keys выбранной сессии.</p>
             </div>
             <div class="spacer"></div>
             <button class="btn ghost" id="btnImportKey"><svg class="ic"><use href="#ic-upload"/></svg><span class="lbl">Импорт ключа</span></button>
-          </div>
-
-          <div class="card">
-            <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-sparkles"/></svg></span> Новый ключ <small>создаётся сразу в сейфе, без файла на диске</small></h3>
-            <div class="inline-form">
-              <div class="field" style="flex:2 1 210px">
-                <label class="field-label" for="kName"><svg class="ic"><use href="#ic-note"/></svg> Имя ключа</label>
-                <input class="inp" id="kName" placeholder="id_ed25519_new" autocomplete="off">
-              </div>
-              <div class="field" style="flex:1 1 200px">
-                <label class="field-label"><svg class="ic"><use href="#ic-hash"/></svg> Тип</label>
-                <div class="seg" id="kType">
-                  <button class="seg-item on" data-t="ed25519">ed25519</button>
-                  <button class="seg-item" data-t="rsa">rsa</button>
-                </div>
-              </div>
-              <button class="btn primary" id="btnGenKey2" style="height:39px"><svg class="ic"><use href="#ic-sparkles"/></svg> Сгенерировать</button>
-            </div>
           </div>
 
           <div id="keysBox"></div>

@@ -4,29 +4,89 @@ function renderKeys(){
   persist();
   const box=$('#keysBox');
   $('#cntKeys').textContent=S.keys.length;
-  if(!S.keys.length){
-    box.innerHTML='<div class="table-wrap"><div class="empty">'+
-      '<div class="empty-ico">'+IC('key')+'</div>'+
-      '<h4>В сейфе нет ключей</h4>'+
-      '<p>Сгенерируйте пару ed25519/rsa или импортируйте существующий приватный ключ — потом его можно выбрать в настройках сессии.</p>'+
-      '<button class="btn primary" data-do="genKey">'+IC('sparkles')+' Сгенерировать ключ</button>'+
-      '</div></div></div>';
-    return;
-  }
-  box.innerHTML='<div class="table-wrap"><table><thead><tr><th>Имя</th><th style="width:118px">Тип</th><th>Отпечаток</th><th style="width:124px">Создан</th><th style="width:132px"></th></tr></thead><tbody>'+
-    S.keys.map(k=>
-      '<tr data-id="'+k.id+'">'+
-      '<td data-l="Имя" class="name">'+esc(k.name)+'</td>'+
-      '<td data-l="Тип"><span class="tag">'+k.type+'</span></td>'+
-      '<td data-l="Отпечаток" class="mono" style="font-size:11.5px;word-break:break-all">'+esc(k.fp)+'</td>'+
-      '<td data-l="Создан" style="color:var(--dim);font-size:12px">'+k.created+'</td>'+
-      '<td data-l=""><div class="row-actions">'+
-        '<button class="ibtn" title="Скопировать отпечаток" data-do="copyFp" data-arg="'+k.id+'">'+IC('copy')+'</button>'+
-        '<button class="ibtn" title="Экспорт публичного ключа" data-do="exportKey" data-arg="'+k.id+'">'+IC('download')+'</button>'+
-        '<button class="ibtn x" title="Удалить ключ" data-do="delKey" data-arg="'+k.id+'">'+IC('x')+'</button>'+
-      '</div></td></tr>'
-    ).join('')+'</tbody></table></div>';
+  box.innerHTML='<div class="kcards">'+
+    '<button class="kcard k-new" data-do="genKey"><span class="sc-new-ico">'+IC('plus')+'</span><b>Новый ключ</b><small>ed25519 или RSA 4096 — создаётся сразу в сейфе</small></button>'+
+    (S.keys.length?'':'<button class="kcard k-new" data-do="importKey"><span class="sc-new-ico">'+IC('upload')+'</span><b>Импорт ключа</b><small>из файла id_ed25519 / id_rsa или буфера обмена</small></button>')+
+    S.keys.map(keyCard).join('')+'</div>';
 }
+// Card: identity on top, fingerprint, the public key itself, where it is used, and the way to put it on a server.
+function keyCard(k){
+  const used=S.sessions.filter(s=>s.keyId===k.id);
+  const kind=/rsa/.test(k.type)?'rsa':/ecdsa/.test(k.type)?'ecdsa':'ed';
+  return '<div class="kcard" data-id="'+k.id+'">'+
+    '<div class="k-top">'+
+      '<span class="k-ico '+kind+'">'+IC('key')+'</span>'+
+      '<div class="k-t"><b title="'+esc(k.name)+'">'+esc(k.name)+'</b><small><span class="tag">'+esc(k.type)+'</span>'+(k.passphrase?'<span class="k-pp">'+IC('lock')+' фраза-пароль</span>':'')+'<span>создан '+esc(k.created)+'</span></small></div>'+
+      '<div class="k-acts">'+
+        '<button class="ibtn" title="Показать и сохранить публичный ключ" data-do="exportKey" data-arg="'+k.id+'">'+IC('download')+'</button>'+
+        '<button class="ibtn x" title="Удалить ключ из клиента" data-do="delKey" data-arg="'+k.id+'">'+IC('x')+'</button>'+
+      '</div>'+
+    '</div>'+
+    '<button class="k-fp" data-do="copyFp" data-arg="'+k.id+'" title="Отпечаток — нажмите, чтобы скопировать">'+IC('hash')+'<span class="mono">'+esc(k.fp)+'</span></button>'+
+    '<div class="k-pub">'+
+      '<div class="k-pub-h"><span>Публичный ключ</span><button class="k-copy" data-do="copyPub" data-arg="'+k.id+'">'+IC('copy')+' Копировать</button></div>'+
+      '<code class="mono">'+esc(k.publicKey)+'</code>'+
+    '</div>'+
+    '<div class="k-foot">'+
+      (used.length
+        ?'<div class="k-used"><span class="k-used-l">В сессиях</span>'+used.map(s=>{const o=osOf(s.os);return '<span class="k-chip" style="--osc:'+o.color+'">'+IC(o.icon)+esc(s.name)+'</span>';}).join('')+'</div>'
+        :'<div class="k-used"><span class="hint" style="margin:0">Пока не используется в сессиях</span></div>')+
+      '<button class="btn primary sm" data-do="installKey" data-arg="'+k.id+'">'+IC('upload')+' Добавить на сервер</button>'+
+    '</div>'+
+  '</div>';
+}
+window.copyPub=id=>{
+  const k=S.keys.find(x=>x.id===id);if(!k)return;
+  navigator.clipboard&&navigator.clipboard.writeText(k.publicKey).catch(()=>{});
+  toast('Публичный ключ «'+k.name+'» скопирован — его можно вставить в authorized_keys или панель хостинга','ok','Ключи');
+};
+// ssh-copy-id from the client: pick a session, put the public key on that server, optionally switch the session to this key.
+window.installKey=id=>{
+  const k=S.keys.find(x=>x.id===id);if(!k)return;
+  if(!S.vaultOpen){toast('Сейф заблокирован','err','Отказано');lockScreenFocus();return;}
+  if(!S.sessions.length){toast('Сначала создайте сессию — ключ добавляется на её сервер','info','Ключи');go('sessions');return;}
+  const live=sid=>S.tabs.find(t=>!t.local&&t.session===sid&&t.connId&&!t.closed);
+  const list=S.sessions.slice().sort((a,b)=>(!!live(b.id))-(!!live(a.id))||a.name.localeCompare(b.name,'ru'));
+  let sel=(list.find(s=>live(s.id)&&s.keyId!==k.id)||list.find(s=>s.keyId!==k.id)||list[0]).id;
+  const m=openModal({title:'Добавить ключ на сервер',sub:esc(k.name)+' · '+esc(k.type),icon:'upload',wide:true,
+    body:'<p class="hint" style="margin:0 0 12px;font-size:12px">Публичная часть допишется в <span class="mono">~/.ssh/authorized_keys</span> пользователя сессии — как <span class="mono">ssh-copy-id</span>. Приватный ключ остаётся в клиенте. Если сессия не подключена, приложение сначала подключится к ней.</p>'+
+      '<div class="ks-list" id="ksList">'+list.map(s=>{
+        const o=osOf(s.os),on=!!live(s.id);
+        return '<button class="ks-opt" data-sid="'+s.id+'" style="--osc:'+o.color+'">'+
+          '<span class="nm-os">'+IC(o.icon)+'</span>'+
+          '<span class="ks-t"><b>'+esc(s.name)+'</b><small class="mono">'+esc(s.user+'@'+s.host+(String(s.port)!=='22'?':'+s.port:''))+'</small></span>'+
+          (s.keyId===k.id?'<span class="tag">уже по этому ключу</span>':'')+
+          '<span class="pill '+(on?'on':'off')+'"><span class="sdot"></span>'+(on?'подключена':'подключится')+'</span>'+
+          '<span class="ks-radio"></span></button>';
+      }).join('')+'</div>'+
+      '<label class="upd-auto" style="margin-top:14px"><input type="checkbox" id="ksUse" checked> Входить в выбранную сессию по ключу «'+esc(k.name)+'» после добавления</label>',
+    footer:'<button class="btn ghost left" data-close>'+IC('x')+' Отмена</button><button class="btn primary" id="ksGo">'+IC('upload')+' Добавить</button>',
+    onMount:el=>{
+      const paint=()=>el.querySelectorAll('.ks-opt').forEach(b=>b.classList.toggle('on',b.dataset.sid===sel));
+      paint();
+      el.querySelector('#ksList').onclick=e=>{const b=e.target.closest('.ks-opt');if(b){sel=b.dataset.sid;paint();}};
+      el.querySelector('#ksGo').onclick=async()=>{
+        const s=S.sessions.find(x=>x.id===sel);if(!s)return;
+        const useKey=el.querySelector('#ksUse').checked;
+        m.close();
+        let tab=live(s.id);
+        if(!tab){
+          await connectSession(s.id);
+          tab=live(s.id);
+          if(!tab){toast('Не удалось подключиться к «'+s.name+'» — ключ не добавлен','err','Ключи');return;}
+        }
+        const r=await window.keysAPI.install(tab.connId,k.publicKey);
+        if(!r.ok){toast(r.error,'err','Ключ не добавлен');logEvent('err','key','Ключ «'+k.name+'» не добавлен: '+r.error,sessTarget(s));return;}
+        logEvent('ok','key',(r.added?'Ключ «'+k.name+'» добавлен в authorized_keys':'Ключ «'+k.name+'» уже был в authorized_keys'),sessTarget(s));
+        let switched=false;
+        if(useKey&&(s.auth!=='key'||s.keyId!==k.id)){
+          Object.assign(s,{auth:'key',keyId:k.id,keyPath:'',passphrase:''});
+          switched=true;renderSessions();renderKeys();
+        }
+        toast((r.added?'Ключ добавлен на '+s.host:'Этот ключ уже был на '+s.host)+(switched?'. Сессия «'+s.name+'» теперь входит по ключу — старый пароль сохранён на всякий случай.':''),'ok','Ключ на сервере');
+      };
+    }});
+};
 window.copyFp=id=>{const k=S.keys.find(x=>x.id===id);if(!k)return;navigator.clipboard&&navigator.clipboard.writeText(k.fp).catch(()=>{});toast('Отпечаток скопирован: '+k.fp.slice(0,24)+'…','ok','Ключи');};
 const shortKeyType=t=>t==='ssh-ed25519'?'ed25519':t==='ssh-rsa'?'rsa':/^ecdsa/.test(t)?'ecdsa':t;
 function addKeyToClient(info,privateKey,passphrase,name){
@@ -64,8 +124,7 @@ window.delKey=async(id,tr)=>{
     renderKeys();renderSessions();toast('Ключ «'+k.name+'» удалён','ok','Ключи');
   },260);
 };
-$('#btnGenKey2').onclick=()=>genKey();
-$('#btnImportKey').onclick=()=>{
+function importKey(){
   const m=openModal({title:'Импорт ключа',sub:'из файла или буфера обмена',icon:'upload',
     body:'<div class="field" style="margin-bottom:13px"><label class="field-label">'+IC('note')+' Имя в клиенте</label><input class="inp" id="impName" placeholder="по умолчанию — комментарий ключа или имя файла"></div>'+
       '<div class="field" style="margin-bottom:13px"><label class="field-label" style="display:flex;align-items:center;gap:6px">'+IC('key')+' Приватный ключ'+
@@ -96,14 +155,15 @@ $('#btnImportKey').onclick=()=>{
         toast(k.type+' ключ «'+k.name+'» добавлен · '+k.fp.slice(0,22)+'…','ok','Импорт');
       };
     }});
-};
+}
+window.importKey=importKey;
+$('#btnImportKey').onclick=importKey;
 function genKey(){
   if(!S.vaultOpen){toast('Сейф заблокирован — разблокируйте для генерации','err','Отказано');lockScreenFocus();return;}
-  const pre=$('#kName').value.trim();
-  let type=($('#kType .seg-item.on')||{dataset:{t:'ed25519'}}).dataset.t;
+  let type='ed25519';
   const m=openModal({title:'Генерация ключа',sub:'новая пара ключей OpenSSH',icon:'sparkles',
     body:'<div class="grid2">'+
-        '<div class="field"><label class="field-label">'+IC('note')+' Имя ключа</label><input class="inp" id="gName" value="'+esc(pre||('id_'+type+'_'+rnd(10,99)))+'"></div>'+
+        '<div class="field"><label class="field-label">'+IC('note')+' Имя ключа</label><input class="inp" id="gName" value="'+esc('id_'+type+'_'+rnd(10,99))+'"></div>'+
         '<div class="field"><label class="field-label">'+IC('hash')+' Тип</label>'+
           '<div class="seg" id="gType">'+
             '<button class="seg-item '+(type==='ed25519'?'on':'')+'" data-t="ed25519">ed25519</button>'+
@@ -113,7 +173,7 @@ function genKey(){
       '</div>'+
       '<div class="field" style="margin-top:14px"><label class="field-label">'+IC('lock')+' Фраза-пароль (необязательно)</label>'+
         pwInput('gPass','дополнительная защита приватной части','')+'</div>'+
-      '<p class="hint" id="gTxt" style="margin:12px 0 0">'+IC('info')+' После генерации добавьте публичный ключ на сервер в ~/.ssh/authorized_keys (кнопка экспорта в списке).</p>',
+      '<p class="hint" id="gTxt" style="margin:12px 0 0">'+IC('info')+' Потом нажмите «Добавить на сервер» на карточке ключа — он запишется в ~/.ssh/authorized_keys нужной сессии.</p>',
     footer:'<button class="btn ghost left" data-close>'+IC('x')+' Отмена</button><button class="btn primary" id="gGo">'+IC('sparkles')+' Сгенерировать</button>',
     onMount:el=>{
       el.querySelectorAll('#gType .seg-item').forEach(b=>{b.onclick=()=>{
@@ -134,14 +194,8 @@ function genKey(){
         const k=addKeyToClient(r,r.privateKey,pass,name);
         if(!k)return;
         m.close();
-        toast(k.type.toUpperCase()+' ключ «'+name+'» создан · '+k.fp.slice(0,22)+'…','ok','Генерация завершена');
+        toast(k.type.toUpperCase()+' ключ «'+name+'» создан — «Добавить на сервер» на его карточке','ok','Генерация завершена');
       };
     }});
 }
 window.genKey=genKey;
-$$('#kType .seg-item').forEach(b=>{b.onclick=()=>{
-  $$('#kType .seg-item').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-  const n=$('#kName');
-  if(!n.value.trim()||/^id_(ed25519|rsa)_/.test(n.value))n.value='id_'+b.dataset.t+'_'+rnd(10,99);
-  toast('Тип ключа: '+b.dataset.t,'info','Генерация');
-};});
