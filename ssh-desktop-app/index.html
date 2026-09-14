@@ -109,24 +109,6 @@
   </header>
 
   <div class="shell" id="homeShell">
-    <nav class="sidebar" id="sidebar">
-      <div class="sb-head">
-        <span class="sb-label">Разделы</span>
-        <button class="sb-toggle" id="btnRail" title="Свернуть меню"><svg class="ic"><use href="#ic-chev-left"/></svg></button>
-      </div>
-      <button class="nav-item active" data-view="sessions" data-tip="Сессии"><span class="ni"><svg class="ic"><use href="#ic-sessions"/></svg></span><span class="nl">Сессии</span><span class="badge" id="bgSessions">0</span></button>
-      <button class="nav-item" data-view="keys" data-tip="Ключи"><span class="ni"><svg class="ic"><use href="#ic-key"/></svg></span><span class="nl">Ключи</span><span class="badge" id="bgKeys">0</span></button>
-      <button class="nav-item" data-view="tunnels" data-tip="Пробросы портов"><span class="ni"><svg class="ic"><use href="#ic-tunnels"/></svg></span><span class="nl">Пробросы портов</span><span class="badge" id="bgTunnels">0</span></button>
-      <button class="nav-item" data-view="journal" data-tip="Журнал"><span class="ni"><svg class="ic"><use href="#ic-activity"/></svg></span><span class="nl">Журнал</span><span class="badge" id="bgJournal" title="Сбоев в журнале">0</span></button>
-      <button class="nav-item" data-view="settings" data-tip="Настройки"><span class="ni"><svg class="ic"><use href="#ic-settings"/></svg></span><span class="nl">Настройки</span></button>
-
-      <div class="sb-foot">
-        <div class="row"><span>Хранилище</span><b id="footStore">переносимое</b></div>
-        <div class="row"><span>Автоблок.</span><b id="footLock">15 мин</b></div>
-        <div class="row"><span>Вкладки</span><span class="kbd">Ctrl+Tab</span></div>
-      </div>
-    </nav>
-    <div class="scrim" id="scrim"></div>
 
     <main class="content" id="content">
       <div class="views">
@@ -380,6 +362,13 @@
 
       </div>
     </main>
+    <nav class="dock" id="dock" aria-label="Разделы">
+      <button class="nav-item active" data-view="sessions" title="Сессии (Alt+1 — Главная)"><span class="ni"><svg class="ic"><use href="#ic-sessions"/></svg><span class="badge ok" id="bgSessions" title="Активных сессий">0</span></span><span class="nl">Сессии</span></button>
+      <button class="nav-item" data-view="keys" title="Ключи"><span class="ni"><svg class="ic"><use href="#ic-key"/></svg></span><span class="nl">Ключи</span></button>
+      <button class="nav-item" data-view="tunnels" title="Пробросы портов"><span class="ni"><svg class="ic"><use href="#ic-tunnels"/></svg><span class="badge ok" id="bgTunnels" title="Работающих пробросов">0</span></span><span class="nl">Пробросы</span></button>
+      <button class="nav-item" data-view="journal" title="Журнал"><span class="ni"><svg class="ic"><use href="#ic-activity"/></svg><span class="badge" id="bgJournal" title="Сбоев в журнале">0</span></span><span class="nl">Журнал</span></button>
+      <button class="nav-item" data-view="settings" title="Настройки"><span class="ni"><svg class="ic"><use href="#ic-settings"/></svg></span><span class="nl">Настройки</span></button>
+    </nav>
   </div>
 
   <div class="ws" id="ws" hidden></div>

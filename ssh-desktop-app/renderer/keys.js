@@ -4,7 +4,6 @@ function renderKeys(){
   persist();
   const box=$('#keysBox');
   $('#cntKeys').textContent=S.keys.length;
-  $('#bgKeys').textContent=S.keys.length;
   if(!S.keys.length){
     box.innerHTML='<div class="table-wrap"><div class="empty">'+
       '<div class="empty-ico">'+IC('key')+'</div>'+

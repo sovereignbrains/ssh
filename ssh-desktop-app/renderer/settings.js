@@ -4,8 +4,6 @@ function renderSettings(){
   persist();
   $('#dataDir').value=S.dataDir||'';$('#dataDir').title=S.dataDir||'';
   $('#shellDir').value=S.shellDir||shellInfo.home||'';
-  $('#footStore').textContent=S.store==='std'?'стандартное':'переносимое';
-  $('#footLock').textContent=S.autolock===0?'никогда':(S.autolock===60?'1 час':S.autolock+' мин');
   $$('#storeOpts .opt').forEach(o=>o.classList.toggle('on',o.dataset.store===S.store));
   $$('#autolockSeg .seg-item').forEach(b=>b.classList.toggle('on',+b.dataset.min===S.autolock));
   $('#shellSel').value=S.shell;$('#fontSel').value=S.font;

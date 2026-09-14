@@ -69,9 +69,10 @@ function termFocus(){
   const st=g&&g.kind==='term'&&xtermState[g.focus];
   if(st)st.term.focus();
 }
+// Dock badges: connected sessions and running tunnels (journal errors are counted in journal.js).
 function updateBadges(){
-  $('#bgKeys').textContent=S.keys.length;
-  $('#bgTunnels').textContent=S.tunnels.length;
+  $('#bgSessions').textContent=S.sessions.filter(s=>s.status==='active').length;
+  $('#bgTunnels').textContent=S.tunnels.filter(t=>t.on).length;
 }
 
 /* ---- local shell over a real PTY ---- */

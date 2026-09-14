@@ -12,7 +12,7 @@ function renderTunnels(){
   persist();
   const box=$('#tunnelsBox');
   $('#cntTunnels').textContent=S.tunnels.length;
-  $('#bgTunnels').textContent=S.tunnels.length;
+  updateBadges();
   if(!S.tunnels.length){
     box.innerHTML='<div class="table-wrap"><div class="empty">'+
       '<div class="empty-ico">'+IC('tunnels')+'</div>'+

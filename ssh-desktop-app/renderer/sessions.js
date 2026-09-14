@@ -170,7 +170,6 @@ async function connectSession(id,rowOrBtn,opts){
       if(!keyEntry){toast('Ключ этой сессии удалён из клиента — выберите другой в «Изменить»','err','Нет ключа');return;}
     }else if(!s.keyPath){toast('У сессии не указан ключ — откройте «Изменить»','err','Нет ключа');return;}
   }
-  closeDrawer();
 
   const btn=(rowOrBtn&&rowOrBtn.classList&&rowOrBtn.classList.contains('ibtn'))?rowOrBtn:(rowOrBtn?rowOrBtn.querySelector('.ibtn.ok'):null);
   s.status='connecting';renderSessions();
@@ -274,7 +273,7 @@ function renderSessions(){
   persist();
   const box=$('#sessionsBox');
   $('#cntSessions').textContent=S.sessions.length;
-  $('#bgSessions').textContent=S.sessions.length;
+  updateBadges();
   if(!S.sessions.length){
     box.innerHTML='<div class="table-wrap"><div class="empty">'+
       '<div class="empty-ico">'+IC('sessions')+'</div>'+

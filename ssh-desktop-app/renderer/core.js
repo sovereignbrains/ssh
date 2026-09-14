@@ -72,7 +72,7 @@ const osOf = k => OS[k] || OS.generic;
 
 /* ---------------- STATE ---------------- */
 const S={
-  view:'sessions',vaultOpen:false,vaultStatus:null,rail:false,
+  view:'sessions',vaultOpen:false,vaultStatus:null,
   themeMode:'auto',store:'std',autolock:15,
   dataDir:'',shellDir:'',
   shell:'pwsh',font:"'JetBrains Mono','Cascadia Mono',monospace",fontSize:13.5,scrollback:10000,
@@ -185,7 +185,7 @@ setInterval(()=>{if(S.themeMode==='auto')applyTheme(true);},60000);
 
 /* ---------------- RIPPLE ---------------- */
 document.addEventListener('pointerdown',e=>{
-  const t=e.target.closest('.btn,.nav-item,.opt,.ibtn,.seg-item,.wbtn,.stab-add,.nm-item,.pill.clickable,.stepper button,.sb-toggle');
+  const t=e.target.closest('.btn,.nav-item,.opt,.ibtn,.seg-item,.wbtn,.stab-add,.nm-item,.pill.clickable,.stepper button');
   if(!t)return;
   const r=t.getBoundingClientRect(),size=Math.max(r.width,r.height)*1.1;
   const s=document.createElement('span');s.className='ripple';
@@ -209,44 +209,19 @@ function go(name){
   S.view=name;
   $$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===name));
   $('#content').scrollTo({top:0,behavior:'smooth'});
-  closeDrawer();
   if(name==='settings')refreshTempInfo();
   if(name==='journal')renderJournal();
 }
 window.go=go;
 $$('.nav-item').forEach(n=>{n.onclick=()=>go(n.dataset.view);});
 
-/* ---------------- SIDEBAR ---------------- */
-const sidebar=$('#sidebar'),scrim=$('#scrim');
-function openDrawer(){sidebar.classList.add('open');scrim.classList.add('on');}
-function closeDrawer(){sidebar.classList.remove('open');scrim.classList.remove('on');}
-function setRail(v){
-  if(window.innerWidth<=720){
-    document.documentElement.classList.remove('rail');S.rail=false;
-    if(v)openDrawer();
-    return;
-  }
-  S.rail=!!v;
-  document.documentElement.classList.toggle('rail',S.rail);
-  $('#btnRail').title=S.rail?'Развернуть меню':'Свернуть меню';
-  setTimeout(fitActiveXterm,220);
-}
-function toggleRail(){
-  if(window.innerWidth<=720){sidebar.classList.contains('open')?closeDrawer():openDrawer();return;}
-  setRail(!S.rail);
-}
-$('#btnRail').onclick=toggleRail;
-// Zero counters are noise in the menu: hide them, keep the rest.
+// Zero counters are noise in the dock: hide them.
 $$('.nav-item .badge').forEach(b=>{
   const sync=()=>b.classList.toggle('zero',b.textContent.trim()==='0');
   new MutationObserver(sync).observe(b,{childList:true,characterData:true,subtree:true});
   sync();
 });
-scrim.onclick=closeDrawer;
-window.addEventListener('resize',()=>{
-  if(window.innerWidth<=720){closeDrawer();document.documentElement.classList.remove('rail');}
-  fitActiveXterm();
-});
+window.addEventListener('resize',()=>fitActiveXterm());
 // The frog is the «Главная» tab.
 $('#logo').onclick=()=>{
   $('#logo img').animate([{transform:'scale(1)'},{transform:'scale(.86)'},{transform:'scale(1.06)'},{transform:'scale(1)'}],{duration:360,easing:'cubic-bezier(.3,1.2,.4,1)'});
