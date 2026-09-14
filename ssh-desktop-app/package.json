@@ -1,23 +1,30 @@
 {
   "name": "ssh-desktop-app",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "release": "node scripts/release.js"
   },
   "author": {
     "name": "Sovereign Brains",
     "email": "info@sovereignbrains.com"
   },
   "homepage": "https://github.com/sovereignbrains/ssh",
-  "keywords": ["ssh", "client", "terminal"],
+  "keywords": [
+    "ssh",
+    "client",
+    "terminal"
+  ],
   "license": "ISC",
   "description": "SSH Client Desktop Application",
   "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3"
   },
@@ -30,21 +37,66 @@
     "files": [
       "main.js",
       "preload.js",
-      "index.html"
+      "vault.js",
+      "sftp.js",
+      "agent.js",
+      "updater.js",
+      "renderer/**/*",
+      "assets/**/*",
+      "index.html",
+      "node_modules/**/*",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/ssh2/**/*",
+      "node_modules/node-pty/**/*"
     ],
     "win": {
-      "target": ["nsis"],
-      "icon": "icon.ico"
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "icon.icns"
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.png"
     },
     "linux": {
-      "target": ["AppImage"],
-      "icon": "icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "icon": "assets/icon.png",
       "category": "Utility",
       "maintainer": "Sovereign Brains <info@sovereignbrains.com>"
-    }
+    },
+    "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "artifactName": "SSH-Client-Setup-${version}.${ext}"
+    },
+    "beforeBuild": "scripts/before-build.js",
+    "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sovereignbrains",
+        "repo": "ssh",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.76.0",
+    "@agentclientprotocol/sdk": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "electron-updater": "^6.8.9",
+    "node-pty": "^1.1.0",
+    "ssh2": "^1.17.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "zod": "^4.6.4"
   }
 }
