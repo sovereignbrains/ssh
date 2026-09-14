@@ -72,11 +72,11 @@ const osOf = k => OS[k] || OS.generic;
 
 /* ---------------- STATE ---------------- */
 const S={
-  view:'sessions',vaultOpen:false,vaultStatus:null,rail:false,railHint:false,
+  view:'sessions',vaultOpen:false,vaultStatus:null,rail:false,
   themeMode:'auto',store:'std',autolock:15,
   dataDir:'',shellDir:'',
   shell:'pwsh',font:"'JetBrains Mono','Cascadia Mono',monospace",fontSize:13.5,scrollback:10000,
-  sortAsc:true,selSession:null,glass:true,sessView:'cards',
+  sortAsc:true,selSession:null,sessView:'cards',
   sessions:[],
   keys:[],
   journal:[],
@@ -197,10 +197,6 @@ document.addEventListener('pointerdown',e=>{
 /* ---------------- ROUTER ---------------- */
 const ORDER=['sessions','keys','tunnels','journal','settings'];
 function go(name){
-  // Terminals and SFTP live in top tabs, Claude in the floating chat; the rest are pages of «Главная».
-  if(name==='terminal'){activateLastTerm();return;}
-  if(name==='files'){openFiles();return;}
-  if(name==='claude'){openClaude();return;}
   if(S.active!==null)activateGroup(null);
   if(!name||name===S.view)return;
   const dir=ORDER.indexOf(name)>ORDER.indexOf(S.view)?1:-1;

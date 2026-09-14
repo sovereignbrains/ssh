@@ -26,11 +26,6 @@ function activateGroup(id){
   if(g&&g.kind==='term'){requestAnimationFrame(()=>{fitActiveXterm();termFocus();});pollStatsSoon();}
 }
 window.activateGroup=activateGroup;
-function activateLastTerm(){
-  const list=S.groups.filter(g=>g.kind==='term');
-  if(!list.length){go('sessions');toast('Открытых терминалов нет — подключитесь к сессии или откройте локальный shell','info','Терминал');return;}
-  activateGroup(list.reduce((a,b)=>(b.usedAt||0)>(a.usedAt||0)?b:a).id);
-}
 function cycleTopTab(dir){
   const ids=[null].concat(S.groups.map(g=>g.id));
   const i=ids.indexOf(S.active);

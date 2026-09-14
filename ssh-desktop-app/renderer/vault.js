@@ -8,7 +8,7 @@ function vaultSnapshot(){
     keys:S.keys.map(k=>({id:k.id,name:k.name,type:k.type,fp:k.fp,publicKey:k.publicKey,privateKey:k.privateKey,passphrase:k.passphrase||'',created:k.created})),
     tunnels:S.tunnels.map(t=>({id:t.id,name:t.name,session:t.session,lport:t.lport,host:t.host,rport:t.rport,auto:!!t.auto})),
     journal:S.journal,
-    settings:{themeMode:S.themeMode,autolock:S.autolock,glass:S.glass,sessView:S.sessView,shell:S.shell,shellDir:S.shellDir,font:S.font,fontSize:S.fontSize,scrollback:S.scrollback,sortAsc:S.sortAsc}
+    settings:{themeMode:S.themeMode,autolock:S.autolock,sessView:S.sessView,shell:S.shell,shellDir:S.shellDir,font:S.font,fontSize:S.fontSize,scrollback:S.scrollback,sortAsc:S.sortAsc}
   };
 }
 function applyVaultData(d){

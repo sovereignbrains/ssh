@@ -34,7 +34,7 @@ $('#btnResetSettings').onclick=async()=>{
   const ok=await confirmModal({title:'Сбросить настройки?',icon:'refresh',danger:false,ok:'Сбросить',
     text:'Тема, автоблокировка, оболочка и параметры терминала вернутся к значениям по умолчанию. Сессии, ключи и пробросы не пострадают.'});
   if(!ok){toast('Сброс отменён','info','Настройки');return;}
-  Object.assign(S,{themeMode:'auto',autolock:15,glass:true,shellDir:'',shell:'pwsh',font:"'JetBrains Mono','Cascadia Mono',monospace",fontSize:13.5,scrollback:10000});
+  Object.assign(S,{themeMode:'auto',autolock:15,shellDir:'',shell:'pwsh',font:"'JetBrains Mono','Cascadia Mono',monospace",fontSize:13.5,scrollback:10000});
   applyTheme(true);renderSettings();toast('Настройки сброшены к значениям по умолчанию','ok','Настройки');
 };
 async function pickShellDir(){

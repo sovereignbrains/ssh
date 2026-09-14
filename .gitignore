@@ -1,99 +1,17 @@
-```
 # Dependencies
 node_modules/
 
-# Build artifacts
+# Build output (installers are published to GitHub Releases, not committed)
 dist/
-ssh-desktop-app/dist/
 
-# Electron app specific
-node_modules/.bin/
-node_modules/@electron/
-node_modules/app-builder-lib/
-node_modules/electron/
-node_modules/electron-builder/
-
-# Compressed files
-*.zip
-*.tar.gz
-*.tar.xz
-*.tar.bz2
-*.gz
-*.xz
-*.bz2
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-
-# Logs
+# Logs and local environment
 *.log
-
-# Environment
 .env
-.env.local
 .env.*
 
-# IDE and editor files
+# Editors and OS
 .vscode/
 .idea/
 *.swp
-*.swo
-*.tmp
-
-# OS specific
 .DS_Store
 Thumbs.db
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# Virtual environments
-venv/
-.venv/
-.env/
-
-# Temporary files
-*.tmp
-*.temp
-
-# Local configuration
-*.local
-
-# TypeScript/JavaScript build output
-*.js.map
-*.tsbuildinfo
-
-# Additional common ignores
-*.out
-*.a
-*.so
-*.dll
-*.exe
-*.bin
-*.o
-*.obj
-*.app
-
-# Package lock files
-package-lock.json
-
-# Additional Electron builder outputs
-!.gitignore
-```
