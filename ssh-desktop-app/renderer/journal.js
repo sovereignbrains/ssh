@@ -75,7 +75,7 @@ $('#btnJournalClear').onclick=async()=>{
     text:isS?'Будут удалены все записи о подключениях ('+count+'). Сессии, ключи и пробросы не пострадают.'
             :'Файл <span class="mono">logs\\errors.log</span> будет удалён ('+count+' записей).'});
   if(!ok)return;
-  if(isS){S.journal=[];persist();}
+  if(isS){S.journal=[];S.journalClearedAt=Date.now();persist();}
   else{await window.appAPI.clearErrors();errorEntries=[];}
   renderJournal();
   toast(isS?'Журнал сессий очищен':'Журнал сбоев очищен','ok','Журнал');

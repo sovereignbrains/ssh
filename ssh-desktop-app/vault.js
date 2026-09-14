@@ -35,29 +35,45 @@ function decrypt(key, envelope) {
 
 function writeAtomic(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + '.tmp';
+  const tmp = path.join(path.dirname(file), '.' + path.basename(file) + '.tmp');
   fs.writeFileSync(tmp, content);
   fs.renameSync(tmp, file);
 }
 
-function readEnvelope(file) {
-  let env;
-  try {
-    env = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    throw new Error('Файл сейфа повреждён или не читается: ' + e.message);
-  }
-  if (env.format !== FORMAT || env.version !== VERSION || !env.kdf || !env.kdf.salt) {
+function checkEnvelope(env) {
+  if (!env || env.format !== FORMAT || env.version !== VERSION || !env.kdf || !env.kdf.salt) {
     throw new Error('Неизвестный формат файла сейфа');
   }
   return env;
 }
 
+function readEnvelopeText(text) {
+  let env;
+  try {
+    env = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Файл сейфа повреждён или не читается: ' + e.message);
+  }
+  return checkEnvelope(env);
+}
+
+function readEnvelope(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    throw new Error('Файл сейфа повреждён или не читается: ' + e.message);
+  }
+  return readEnvelopeText(text);
+}
+
 class Vault {
-  constructor(file) {
+  constructor(file, device) {
     this.file = file;
+    this.device = device || '';
     this.key = null;
     this.kdf = null;
+    this.lastRev = null; // revision of the file as this process last read or wrote it
   }
 
   exists() { return fs.existsSync(this.file); }
@@ -83,14 +99,54 @@ class Vault {
     }
     this.key = key;
     this.kdf = env.kdf;
+    this.lastRev = env.rev || null;
     return JSON.parse(plaintext);
   }
 
   save(data) {
     if (!this.key) throw new Error('Сейф заблокирован');
+    const rev = crypto.randomBytes(9).toString('hex');
     const env = { format: FORMAT, version: VERSION, kdf: this.kdf, cipher: 'aes-256-gcm',
-      ...encrypt(this.key, JSON.stringify(data)), savedAt: new Date().toISOString() };
+      ...encrypt(this.key, JSON.stringify(data)), savedAt: new Date().toISOString(), rev, device: this.device };
     writeAtomic(this.file, JSON.stringify(env, null, 1));
+    this.lastRev = rev;
+  }
+
+  // The encrypted file exactly as stored — this is what goes to the cloud.
+  envelopeText() {
+    const text = fs.readFileSync(this.file, 'utf8');
+    readEnvelopeText(text);
+    return text;
+  }
+
+  // Decrypt a copy of the vault from elsewhere with the current key.
+  openEnvelope(env) {
+    if (!this.key) throw new Error('Сейф заблокирован');
+    checkEnvelope(env);
+    if (!this.kdf || env.kdf.salt !== this.kdf.salt || env.kdf.N !== this.kdf.N) {
+      const e = new Error('Копия сейфа зашифрована другим мастер-паролем');
+      e.code = 'needs-password';
+      throw e;
+    }
+    return JSON.parse(decrypt(this.key, env));
+  }
+
+  // The other copy uses a different password or salt: open it with its password and switch to its key,
+  // so every computer ends up with the same key. The local file is re-encrypted on the next save.
+  async adoptEnvelope(password, env) {
+    checkEnvelope(env);
+    const key = await deriveKey(password, Buffer.from(env.kdf.salt, 'base64'), env.kdf);
+    let plaintext;
+    try {
+      plaintext = decrypt(key, env);
+    } catch {
+      key.fill(0);
+      throw new Error('Неверный мастер-пароль облачной копии');
+    }
+    if (this.key) this.key.fill(0);
+    this.key = key;
+    this.kdf = env.kdf;
+    return JSON.parse(plaintext);
   }
 
   async changePassword(oldPassword, newPassword) {
@@ -118,6 +174,15 @@ class Vault {
     this.kdf = null;
   }
 
+  // Put a downloaded copy in place of a missing local vault (restoring on a new computer).
+  installEnvelope(text) {
+    if (this.exists()) throw new Error('Сейф на этом компьютере уже есть');
+    const env = readEnvelopeText(text);
+    writeAtomic(this.file, text);
+    this.lastRev = env.rev || null;
+    return env;
+  }
+
   moveTo(newFile) {
     if (path.resolve(newFile) === path.resolve(this.file)) return;
     if (fs.existsSync(newFile)) {
@@ -138,4 +203,4 @@ class Vault {
   }
 }
 
-module.exports = { Vault };
+module.exports = { Vault, readEnvelopeText };

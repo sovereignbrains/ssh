@@ -15,3 +15,6 @@ dist/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Google OAuth client for sync (generated at build time from GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)
+ssh-desktop-app/google-oauth.json

@@ -341,7 +341,11 @@ function sessionCard(s){
       '<div class="sc-name">'+esc(s.name)+'</div>'+
       '<div class="sc-note">'+esc(s.note||(String(s.port)!=='22'?'порт '+s.port:''))+'</div>'+
       '<div class="sc-meta">'+osBadge(s.os,s.osName)+
-        (s.auth==='key'?'<span class="tag">'+IC('key')+' key</span>':'<span class="tag pass">'+IC('lock')+' pass</span>')+
+        (s.auth==='key'
+          ?(s.keyPath&&!s.keyId
+            ?'<span class="tag pass" title="Ключ из файла на этом компьютере ('+esc(s.keyPath)+'). На другом компьютере его может не быть — импортируйте ключ в клиент, чтобы он синхронизировался.">'+IC('key')+' файл</span>'
+            :'<span class="tag">'+IC('key')+' key</span>')
+          :'<span class="tag pass">'+IC('lock')+' pass</span>')+
         '<span class="sc-last">'+esc(s.last)+'</span></div>'+
     '</div></div>';
 }

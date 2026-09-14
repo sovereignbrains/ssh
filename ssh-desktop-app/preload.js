@@ -112,6 +112,23 @@ contextBridge.exposeInMainWorld('appAPI', {
   exportJournal: (name, text) => ipcRenderer.invoke('journal:export', { name, text }),
 });
 
+contextBridge.exposeInMainWorld('syncAPI', {
+  status: () => ipcRenderer.invoke('sync:status'),
+  login: () => ipcRenderer.invoke('sync:login'),
+  cancelLogin: () => ipcRenderer.invoke('sync:cancel-login'),
+  logout: (deleteRemote) => ipcRenderer.invoke('sync:logout', { deleteRemote }),
+  now: () => ipcRenderer.invoke('sync:now'),
+  setAuto: (auto) => ipcRenderer.invoke('sync:set-auto', { auto }),
+  password: (password) => ipcRenderer.invoke('sync:password', { password }),
+  skipPassword: () => ipcRenderer.invoke('sync:skip-password'),
+  restore: () => ipcRenderer.invoke('sync:restore'),
+  openDrive: () => ipcRenderer.invoke('sync:open-drive'),
+  merged: (id, ok, error) => ipcRenderer.send('sync:merged', { id, ok, error }),
+  onState: (cb) => ipcRenderer.on('sync:state', (event, s) => cb(s)),
+  onRemote: (cb) => ipcRenderer.on('sync:remote', (event, p) => cb(p)),
+  onNeedPassword: (cb) => ipcRenderer.on('sync:need-password', (event, p) => cb(p)),
+});
+
 contextBridge.exposeInMainWorld('updateAPI', {
   get: () => ipcRenderer.invoke('update:get'),
   check: () => ipcRenderer.invoke('update:check'),

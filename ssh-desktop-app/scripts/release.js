@@ -50,6 +50,18 @@ if (next !== pkg.version) {
 }
 console.log('Выпуск ' + next + (notes ? ' — ' + notes : ''));
 
+// Google sign-in for sync: the OAuth client comes from the environment, so it never lands in the public repo.
+const oauthPath = path.join(root, 'google-oauth.json');
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  fs.writeFileSync(oauthPath, JSON.stringify({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET }, null, 2));
+}
+let oauth = null;
+try { oauth = JSON.parse(fs.readFileSync(oauthPath, 'utf8')); } catch {}
+if (!oauth || !/\.apps\.googleusercontent\.com$/.test(oauth.clientId || '')) {
+  console.warn('Внимание: нет настоящего OAuth-клиента Google (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) — в этой сборке вход через Google будет недоступен.');
+  if (oauth) fs.rmSync(oauthPath, { force: true });
+}
+
 const cli = path.join(root, 'node_modules', 'electron-builder', 'cli.js');
 const builderArgs = [cli, '--win', '--publish', 'always'];
 if (notes) builderArgs.push('-c.releaseInfo.releaseNotes=' + notes);

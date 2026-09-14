@@ -7,22 +7,35 @@ function vaultSnapshot(){
       auth:s.auth,password:s.password||'',keyId:s.keyId||'',keyPath:s.keyPath||'',passphrase:s.passphrase||'',last:s.last||'никогда'})),
     keys:S.keys.map(k=>({id:k.id,name:k.name,type:k.type,fp:k.fp,publicKey:k.publicKey,privateKey:k.privateKey,passphrase:k.passphrase||'',created:k.created})),
     tunnels:S.tunnels.map(t=>({id:t.id,name:t.name,session:t.session,lport:t.lport,host:t.host,rport:t.rport,auto:!!t.auto})),
-    journal:S.journal,
-    settings:{themeMode:S.themeMode,autolock:S.autolock,sessView:S.sessView,shell:S.shell,shellDir:S.shellDir,font:S.font,fontSize:S.fontSize,scrollback:S.scrollback,sortAsc:S.sortAsc}
+    journal:S.journal,journalClearedAt:S.journalClearedAt||0,
+    // shell and shellDir are per computer (installed shells, local paths): kept in localStorage, not synced.
+    settings:{themeMode:S.themeMode,autolock:S.autolock,sessView:S.sessView,font:S.font,fontSize:S.fontSize,scrollback:S.scrollback,sortAsc:S.sortAsc}
   };
 }
+const LOCAL_PREFS=['shell','shellDir'];
+function loadLocalPrefs(fromVault){
+  for(const k of LOCAL_PREFS){
+    let v=null;try{v=localStorage.getItem('ssh.'+k);}catch(e){}
+    if(v!==null)S[k]=v;else if(fromVault&&fromVault[k]!=null){S[k]=fromVault[k];saveLocalPrefs();}
+  }
+}
+function saveLocalPrefs(){for(const k of LOCAL_PREFS){try{localStorage.setItem('ssh.'+k,S[k]||'');}catch(e){}}}
 function applyVaultData(d){
   S.sessions=(d.sessions||[]).map(s=>Object.assign({},s,{status:S.tabs.some(t=>!t.local&&t.session===s.id)?'active':'idle'}));
   S.keys=d.keys||[];
   S.tunnels=(d.tunnels||[]).map(t=>Object.assign({},t,{on:false}));
   S.journal=Array.isArray(d.journal)?d.journal:[];
-  if(d.settings)Object.assign(S,d.settings);
+  S.journalClearedAt=d.journalClearedAt||0;
+  if(d.settings){const st=Object.assign({},d.settings);LOCAL_PREFS.forEach(k=>delete st[k]);Object.assign(S,st);}
+  loadLocalPrefs(d.settings);
 }
 function renderVaultData(){
   applyTheme(true);renderSettings();renderSessions();renderKeys();renderTunnelForm();renderTunnels();updateBadges();
 }
 
-let persistTimer=null,lastSavedJson='',savePromise=Promise.resolve();
+// lastSavedData: the versioned data last written (updatedAt per record, tombstones) — the base for stamping changes.
+// lastSnapKey: canonical plain snapshot at that moment, so timestamps alone never trigger a save.
+let persistTimer=null,lastSavedData=null,lastSnapKey='',savePromise=Promise.resolve();
 function persist(){
   if(!S.vaultOpen||!window.vaultAPI)return;
   clearTimeout(persistTimer);
@@ -31,11 +44,13 @@ function persist(){
 function flushPersist(){
   clearTimeout(persistTimer);persistTimer=null;
   if(!S.vaultOpen||!window.vaultAPI)return savePromise;
-  const snap=vaultSnapshot(),json=JSON.stringify(snap);
-  if(json===lastSavedJson)return savePromise;
+  saveLocalPrefs();
+  const snap=vaultSnapshot(),key=VaultMerge.canon(snap);
+  if(key===lastSnapKey)return savePromise;
   savePromise=savePromise.then(async()=>{
-    const r=await window.vaultAPI.save(snap);
-    if(r.ok)lastSavedJson=json;
+    const data=VaultMerge.stamp(lastSavedData,snap,Date.now());
+    const r=await window.vaultAPI.save(data);
+    if(r.ok){lastSavedData=data;lastSnapKey=key;}
     else toast('Не удалось сохранить сейф: '+r.error,'err','Сейф');
   });
   return savePromise;
@@ -85,6 +100,7 @@ function renderLock(){
     alt.onclick=null;
   }
   fields.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')lockPrimary();}));
+  if(typeof syncRestoreVisibility==='function')syncRestoreVisibility();
 }
 async function refreshVaultStatus(){
   const r=await window.vaultAPI.status();
@@ -109,7 +125,8 @@ async function lockPrimary(){
   applyVaultData(st.exists?(r.data||{}):{});
   S.vaultStatus=st.exists?r.status:r;
   S.vaultOpen=true;
-  lastSavedJson=JSON.stringify(vaultSnapshot());
+  lastSavedData=st.exists?(r.data||{}):null;
+  lastSnapKey=st.exists?VaultMerge.canon(vaultSnapshot()):'';
   lastActivity=Date.now();
   if(journalQueue.length)S.journal.push(...journalQueue.splice(0));
   logEvent('ok','vault',st.exists?'Сейф разблокирован':'Сейф создан','');
@@ -123,7 +140,7 @@ async function lockVault(reason){
   S.vaultOpen=false;
   if($('#connectScreen').classList.contains('on')&&typeof connAbort==='function')connAbort('lock');
   modalStack.slice().forEach(m=>m.close());
-  S.sessions=[];S.keys=[];S.tunnels=[];S.journal=[];lastSavedJson='';
+  S.sessions=[];S.keys=[];S.tunnels=[];S.journal=[];S.journalClearedAt=0;lastSavedData=null;lastSnapKey='';
   if(window.vaultAPI)await window.vaultAPI.lock();
   renderSessions();renderKeys();renderTunnelForm();renderTunnels();renderJournal();updateBadges();
   renderVault();

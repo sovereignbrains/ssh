@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, session, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, session, shell, screen, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
@@ -8,6 +8,8 @@ const { Vault } = require('./vault');
 const registerSftp = require('./sftp');
 const registerAgent = require('./agent');
 const registerUpdater = require('./updater');
+const registerSync = require('./sync');
+let syncService = null;
 const pty = require('node-pty');
 const { execFileSync } = require('child_process');
 
@@ -83,17 +85,20 @@ function registerVaultHandlers() {
     if (!password || password.length < 8) throw new Error('Мастер-пароль: минимум 8 символов');
     if (vaultStatus().dirMissing) fs.mkdirSync(dataDir(), { recursive: true });
     await vault.create(password, {});
+    if (syncService) syncService.onUnlock();
     return vaultStatus();
   }));
 
   ipcMain.handle('vault:unlock', wrap(async ({ password }) => {
     const data = await vault.unlock(password || '');
+    if (syncService) syncService.onUnlock();
     return { data, status: vaultStatus() };
   }));
 
   ipcMain.handle('vault:save', wrap(async ({ data }) => {
     try {
       vault.save(data);
+      if (syncService) syncService.onLocalSave();
     } catch (e) {
       logError('сейф', { message: 'Не удалось сохранить сейф: ' + e.message, stack: e.stack });
       throw e;
@@ -138,7 +143,8 @@ function registerVaultHandlers() {
         try { fs.rmSync(path.join(p, entry), { recursive: true, force: true }); } catch {}
       }
     }
-    for (const leftover of [vault.file + '.tmp', path.join(app.getPath('userData'), 'config.json.tmp')]) {
+    const vaultTmp = path.join(path.dirname(vault.file), '.' + path.basename(vault.file) + '.tmp');
+    for (const leftover of [vaultTmp, vault.file + '.tmp', path.join(app.getPath('userData'), 'config.json.tmp')]) {
       try { fs.rmSync(leftover, { force: true }); } catch {}
     }
     const after = tempBytes();
@@ -162,7 +168,8 @@ function registerVaultHandlers() {
     }
     const oldKnownHosts = knownHostsPath();
     vault.moveTo(path.join(dir, VAULT_NAME));
-    config = store === 'portable' ? { store: 'portable', dataDir: dir } : { store: 'std', dataDir: config.dataDir };
+    // Keep the rest of config (window, updates, device id, sync) — only the storage fields change.
+    config = store === 'portable' ? { ...config, store: 'portable', dataDir: dir } : { ...config, store: 'std' };
     saveConfig();
     if (oldKnownHosts !== knownHostsPath()) saveKnownHosts();
     try { if (oldKnownHosts !== knownHostsPath()) fs.unlinkSync(oldKnownHosts); } catch {}
@@ -984,7 +991,9 @@ app.whenReady().then(() => {
   if (!primaryInstance) return;
   Menu.setApplicationMenu(null);
   loadConfig();
-  vault = new Vault(path.join(dataDir(), VAULT_NAME));
+  // Stable id of this computer: tells our own uploads apart from other computers' changes.
+  if (!config.deviceId) { config.deviceId = require('crypto').randomBytes(8).toString('hex'); saveConfig(); }
+  vault = new Vault(path.join(dataDir(), VAULT_NAME), config.deviceId);
   loadKnownHosts();
   registerVaultHandlers();
   registerSshHandlers();
@@ -999,6 +1008,12 @@ app.whenReady().then(() => {
   agentService = registerAgent({
     ipcMain, app, sendToRenderer, logError, sftp: sftpService,
     getConnection: (connId) => connections.get(connId),
+  });
+  syncService = registerSync({
+    ipcMain, app, shell, safeStorage, sendToRenderer, logError, saveConfig,
+    getConfig: () => config,
+    getVault: () => vault,
+    getWindow: () => mainWindow,
   });
   registerUpdater({
     ipcMain, app, sendToRenderer, logError, saveConfig,

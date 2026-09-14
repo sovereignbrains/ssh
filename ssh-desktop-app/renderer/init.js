@@ -1,6 +1,7 @@
 "use strict";
 /* ---------------- INIT ---------------- */
 (async function init(){
+  loadLocalPrefs();
   applyTheme(true);renderSettings();renderSessions();renderKeys();
   renderTunnelForm();renderTunnels();renderTabs();updateBadges();
   refreshShells();
