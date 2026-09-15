@@ -237,8 +237,9 @@ $('#btnMin').onclick=()=>window.electronAPI.send('minimize-window');
 if(window.electronAPI){
   if(window.electronAPI.platform==='darwin')document.documentElement.classList.add('mac');
   window.electronAPI.receive('window-state',st=>{
-    const b=$('#btnMax');b.innerHTML=IC(st.maximized?'restore':'maximize');b.title=st.maximized?'Восстановить':'Развернуть';
+    ['#btnMax','#lockMax'].forEach(id=>{const b=$(id);b.innerHTML=IC(st.maximized?'restore':'maximize');b.title=st.maximized?'Восстановить':'Развернуть';});
   });
 }
-$('#btnMax').onclick=()=>window.electronAPI.send('maximize-window');
-$('#btnClose').onclick=()=>window.electronAPI.send('close-window');
+$('#btnMax').onclick=$('#lockMax').onclick=()=>window.electronAPI.send('maximize-window');
+$('#btnClose').onclick=$('#lockExit').onclick=()=>window.electronAPI.send('close-window');
+$('#lockMin').onclick=()=>window.electronAPI.send('minimize-window');

@@ -598,6 +598,16 @@ html.in-tab .cl-fab .ic{width:22px;height:22px}
 }
 html.in-tab .cl-pop{right:18px;bottom:76px}
 .cl-pop.big{width:min(860px,calc(100vw - 44px));height:calc(100vh - 140px)}
+/* Resize like a window: the panel is anchored bottom-right, so it grows from the left and top edges. */
+.cl-pop{max-width:calc(100vw - 44px);max-height:calc(100vh - 144px)}
+.cl-rs{position:absolute;z-index:30;touch-action:none}
+.cl-rs-l{left:0;top:12px;bottom:12px;width:7px;cursor:ew-resize}
+.cl-rs-t{top:0;left:12px;right:12px;height:6px;cursor:ns-resize}
+.cl-rs-tl{left:0;top:0;width:12px;height:12px;cursor:nwse-resize}
+.cl-rs-l:hover,.cl-pop.resizing .cl-rs-l.on{background:linear-gradient(90deg,var(--claude-line),transparent)}
+.cl-rs-t:hover,.cl-pop.resizing .cl-rs-t.on{background:linear-gradient(180deg,var(--claude-line),transparent)}
+.cl-pop.resizing{user-select:none}
+html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 .cl-pop.out{animation:popOut .18s ease-in both}
 @keyframes popIn{from{opacity:0;transform:translateY(18px) scale(.93)}to{opacity:1;transform:none}}
 @keyframes popOut{to{opacity:0;transform:translateY(12px) scale(.96)}}
@@ -896,7 +906,10 @@ html[data-theme="night"] .k-pub{background:#11100f}
 .sync-acc{display:flex;align-items:center;gap:11px}
 .sync-acc b{display:block;font-size:13.5px}
 .sync-acc small{font-size:11.5px;color:var(--dim-2)}
-.sync-ava{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;background:conic-gradient(#4285f4 0 25%,#34a853 0 50%,#fbbc05 0 75%,#ea4335 0);box-shadow:inset 0 0 0 3px var(--panel)}
+.sync-ava{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#fff;box-shadow:0 6px 16px -8px #000;flex:0 0 auto}
+.sync-ava .glogo{width:20px;height:20px}
+.glogo{width:17px;height:17px;flex:0 0 auto;display:block}
+.btn.gbtn{gap:10px;padding-left:14px}
 .sync-ind{display:grid;place-items:center;color:var(--dim-2);margin-left:-2px}
 .sync-ind .ic{width:15px;height:15px}
 .sync-ind.ok{color:var(--ok)}
@@ -904,9 +917,41 @@ html[data-theme="night"] .k-pub{background:#11100f}
 .sync-ind.error,.sync-ind.password{color:var(--err)}
 @keyframes syncPulse{50%{opacity:.35}}
 
+/* ---------------- LOCK SCREEN ---------------- */
+/* It covers the title bar, so it carries its own: drag to move, minimise, maximise, exit. */
+.overlay.lock-screen{flex-direction:column;padding:60px 20px 20px;overflow-y:auto;
+  background:radial-gradient(700px 520px at 50% 38%,var(--accent-soft),transparent 68%),radial-gradient(520px 420px at 88% 104%,#ffffff08,transparent 70%),#0b0c0df0}
+.lock-bar{position:absolute;top:0;left:0;right:0;height:48px;display:flex;align-items:center;gap:10px;padding:0 8px 0 14px;-webkit-app-region:drag;user-select:none}
+.lock-bar button{-webkit-app-region:no-drag}
+.lock-brand{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.lock-brand img{width:22px;height:22px;border-radius:6px}
+.lock-win{margin-left:auto;display:flex;align-items:center;gap:3px}
+.lock-exit{display:flex;align-items:center;gap:7px;height:31px;margin-left:6px;padding:0 13px 0 11px;border-radius:10px;font-size:12.5px;font-weight:600;color:var(--dim);border:1px solid var(--line-2);transition:var(--tr)}
+.lock-exit .ic{width:15px;height:15px;stroke-width:2}
+.lock-exit:hover{background:var(--err);border-color:transparent;color:#fff}
+.lock-screen .lock-card{width:min(400px,100%);margin:auto 0 0;padding:34px 30px 28px;border-radius:26px;border-color:var(--glass-line);
+  box-shadow:0 50px 110px -40px #000,0 0 0 1px #ffffff05,inset 0 1px 0 var(--glass-hi)}
+.lock-screen .lock-ico{position:relative;width:84px;height:84px;margin:0 auto 20px;border-radius:24px;background:none;box-shadow:none}
+.lock-screen .lock-ico::before{content:"";position:absolute;inset:-18px;border-radius:50%;background:radial-gradient(circle,var(--accent-line),transparent 68%);opacity:.55;animation:lockGlow 3.6s ease-in-out infinite}
+.lock-screen .lock-ico img{position:relative;width:84px;height:84px;border-radius:24px;box-shadow:0 18px 36px -16px #000}
+.lock-badge{position:absolute;right:-7px;bottom:-7px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--accent-ink);background:linear-gradient(140deg,var(--accent),var(--accent-2));box-shadow:0 0 0 4px var(--panel),0 8px 18px -8px var(--accent-line)}
+.lock-badge .ic{width:15px;height:15px;stroke-width:2.2}
+@keyframes lockGlow{50%{opacity:.9;transform:scale(1.08)}}
+.lock-screen .lock-card h3{font-size:21px;letter-spacing:-.3px;margin-bottom:8px}
+.lock-screen .lock-card p{font-size:13px;margin-bottom:22px}
+.lock-screen #lockFields .inp{padding:13px 44px 13px 15px;font-size:14px;border-radius:13px}
+.lock-screen #btnUnlock{height:46px;margin-top:14px!important;border-radius:13px;font-size:14px}
+.lock-screen #btnLockAlt,.lock-screen #btnLockRestore{height:36px}
+.lock-foot{margin:18px 0 auto;display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim-2)}
+.lock-foot .ic{width:14px;height:14px;color:var(--accent)}
+@media (max-height:560px){.lock-screen .lock-ico{width:64px;height:64px;margin-bottom:14px}.lock-screen .lock-ico img{width:64px;height:64px}}
+
 /* ---------------- SETTINGS ---------------- */
 /* Section menu on the left, one row per setting on the right: name and hint, control at the end. */
-.set-layout{display:grid;grid-template-columns:210px minmax(0,860px);gap:36px;justify-content:center;align-items:start}
+.set-layout{display:grid;grid-template-columns:210px minmax(0,860px);gap:36px;justify-content:center;align-items:start;transition:padding-right .3s cubic-bezier(.22,.85,.3,1)}
+/* The open chat floats bottom-right: centre the settings in the space left of it. */
+@media (min-width:1100px){html.cl-open .set-layout{padding-right:calc(var(--cl-w,450px) + 12px)}}
+html.cl-resizing .set-layout{transition:none}
 .set-nav{position:sticky;top:18px;display:flex;flex-direction:column;gap:2px}
 .set-nav h2{margin:6px 12px 16px;font-size:20px;font-weight:700;letter-spacing:-.3px;display:flex;align-items:center;gap:10px}
 .set-nav h2 .ic{color:var(--accent)}

@@ -1,6 +1,7 @@
 "use strict";
 /* ---------------- SYNC (Google Drive) ---------------- */
 const SYNC={s:null,pwModal:null};
+const GLOGO='<svg class="glogo"><use href="#logo-google"/></svg>';
 const syncClock=ts=>ts?new Date(ts).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 
 function renderSyncCard(){
@@ -18,7 +19,7 @@ function renderSyncCard(){
       (s.error?'<div class="upd-st err" style="margin-top:10px">'+IC('alert')+' '+esc(s.error)+'</div>':'')+
       '<div class="upd-actions">'+(waiting
         ?'<span class="upd-st"><span class="spinner"></span> Завершите вход в открывшемся браузере…</span><button class="btn ghost sm" data-do="syncCancelLogin">'+IC('x')+' Отмена</button>'
-        :'<button class="btn primary sm" data-do="syncLogin">'+IC('cloud')+' Войти через Google</button>')+
+        :'<button class="btn gbtn" data-do="syncLogin">'+GLOGO+' Войти через Google</button>')+
       '</div>';
     return;
   }
@@ -28,7 +29,7 @@ function renderSyncCard(){
     :s.lastSyncAt?'<span class="upd-st ok">'+IC('check-c')+' Синхронизировано '+syncClock(s.lastSyncAt)+'</span>'
     :'<span class="hint" style="margin:0">Ещё не синхронизировалось</span>';
   box.innerHTML=
-    '<div class="sync-acc"><span class="sync-ava">'+esc((s.email||'?').slice(0,1).toUpperCase())+'</span><div><b>'+esc(s.email||'Google')+'</b><small>Google Диск</small></div></div>'+
+    '<div class="sync-acc"><span class="sync-ava">'+GLOGO+'</span><div><b>'+esc(s.email||'Google')+'</b><small>Google Диск</small></div></div>'+
     '<div class="upd-row" style="margin-top:12px">'+status+'</div>'+
     where+
     '<div class="upd-actions">'+

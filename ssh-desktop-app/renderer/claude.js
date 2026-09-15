@@ -234,6 +234,7 @@ function openClaude(connId){
   else if(f&&!(CL.chats[CL.connId]&&CL.chats[CL.connId].busy))CL.connId=f.connId;
   CL.open=true;
   $('#clPop').hidden=false;
+  syncClaudeInset();
   $('#clFab').classList.add('open');
   renderClaude();updateClaudeBadge();
   setTimeout(()=>{const t=$('#clText');if(t)t.focus();const l=$('#clLog');if(l)l.scrollTop=l.scrollHeight;},60);
@@ -241,6 +242,7 @@ function openClaude(connId){
 function closeClaude(){
   if(!CL.open)return;
   CL.open=false;
+  syncClaudeInset();
   closeClMenu();
   const pop=$('#clPop');
   pop.classList.add('out');
@@ -255,7 +257,50 @@ function setClaudeBig(v){
   $('#clPop').classList.toggle('big',v);
   $('#clBig').innerHTML=IC(v?'restore':'maximize');
   $('#clBig').title=v?'Обычный размер':'Развернуть';
+  applyClaudeSize();
 }
+/* ---- chat size: drag the left or top edge, or the corner between them; remembered on this computer ---- */
+const CL_MIN_W=360,CL_MIN_H=380;
+try{const v=JSON.parse(localStorage.getItem('ssh.chatSize')||'null');if(v&&v.w>0&&v.h>0)CL.size=v;}catch(e){}
+function applyClaudeSize(){
+  const pop=$('#clPop'),own=!CL.big&&CL.size;
+  pop.style.width=own?CL.size.w+'px':'';
+  pop.style.height=own?CL.size.h+'px':'';
+  syncClaudeInset();
+}
+// Pages that should stay clear of the open chat (settings) read its width from --cl-w.
+function syncClaudeInset(){
+  const root=document.documentElement;
+  root.classList.toggle('cl-open',CL.open);
+  if(CL.open)root.style.setProperty('--cl-w',$('#clPop').offsetWidth+'px');
+}
+$$('#clPop .cl-rs').forEach(h=>{
+  h.onpointerdown=e=>{
+    if(e.button!==0)return;
+    e.preventDefault();
+    const pop=$('#clPop'),root=document.documentElement,mode=h.dataset.rs,r=pop.getBoundingClientRect();
+    const start={x:e.clientX,y:e.clientY,w:pop.offsetWidth,h:pop.offsetHeight};
+    const maxW=r.right-22,maxH=r.bottom-56;
+    if(CL.big){CL.size={w:start.w,h:start.h};setClaudeBig(false);}
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('on');pop.classList.add('resizing');
+    root.style.setProperty('--cl-cursor',getComputedStyle(h).cursor);root.classList.add('cl-resizing');
+    const clamp=(v,a,b)=>Math.round(Math.max(a,Math.min(b,v)));
+    const move=ev=>{
+      CL.size={w:mode==='t'?start.w:clamp(start.w+start.x-ev.clientX,CL_MIN_W,maxW),h:mode==='l'?start.h:clamp(start.h+start.y-ev.clientY,CL_MIN_H,maxH)};
+      applyClaudeSize();
+    };
+    const up=()=>{
+      h.removeEventListener('pointermove',move);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);
+      h.classList.remove('on');pop.classList.remove('resizing');root.classList.remove('cl-resizing');
+      try{localStorage.setItem('ssh.chatSize',JSON.stringify(CL.size));}catch(e){}
+    };
+    h.addEventListener('pointermove',move);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);
+  };
+  h.ondblclick=()=>{CL.size=null;try{localStorage.removeItem('ssh.chatSize');}catch(e){}if(CL.big)setClaudeBig(false);else applyClaudeSize();};
+});
+window.addEventListener('resize',syncClaudeInset);
+applyClaudeSize();
 $('#clFab').onclick=()=>CL.open?closeClaude():openClaude();
 $('#clMin').onclick=closeClaude;
 $('#clPicker').onclick=()=>{$('#clMenu').hidden?openClMenu():closeClMenu();};
