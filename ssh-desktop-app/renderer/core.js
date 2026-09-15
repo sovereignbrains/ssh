@@ -37,13 +37,13 @@ const ACTIONS={
   genKey:()=>genKey(),
   copyFp:a=>copyFp(a),
   exportKey:a=>exportKey(a),
-  delKey:(a,el)=>delKey(a,el.closest('tr,.kcard')),
+  delKey:(a,el)=>delKey(a,el.closest('.krow')),
   copyPub:a=>copyPub(a),
   installKey:a=>installKey(a),
   importKey:()=>importKey(),
-  focusTunnelForm:()=>$('#tName').focus(),
+  copyTunnelAddr:a=>copyTunnelAddr(a),
   toggleTunnel:a=>toggleTunnel(a),
-  delTunnel:(a,el)=>delTunnel(a,el.closest('tr'))
+  delTunnel:(a,el)=>delTunnel(a,el.closest('.trow'))
 };
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-do]');if(!el)return;

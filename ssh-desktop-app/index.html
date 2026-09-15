@@ -70,7 +70,8 @@
 <symbol id="ic-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.6" height="6.6" rx="1.8"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.8"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.8"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.8"/></symbol>
 <symbol id="ic-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.9" cy="6.5" r="1" fill="currentColor" stroke="none"/><circle cx="4.9" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.9" cy="17.5" r="1" fill="currentColor" stroke="none"/></symbol>
 <symbol id="ic-chev-down" viewBox="0 0 24 24"><path d="m6 9.4 6 6 6-6"/></symbol>
-<symbol id="ic-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5.6"/><path d="m6.2 11.2 5.8-5.8 5.8 5.8"/></symbol>
+<symbol id="ic-arrow-right" viewBox="0 0 24 24"><path d="M4.6 12h14.2"/><path d="m13.2 6.2 5.8 5.8-5.8 5.8"/></symbol>
+<symbol id="ic-arrow-up"viewBox="0 0 24 24"><path d="M12 19V5.6"/><path d="m6.2 11.2 5.8-5.8 5.8 5.8"/></symbol>
 <symbol id="ic-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.4" fill="currentColor" stroke="none"/></symbol>
 <symbol id="ic-split" viewBox="0 0 24 24"><rect x="3.4" y="4.4" width="17.2" height="15.2" rx="2.6"/><path d="M12 4.4v15.2"/></symbol>
 <symbol id="ic-detach" viewBox="0 0 24 24"><path d="M13.6 4.4h6v6"/><path d="m19.6 4.4-8 8"/><path d="M17.6 13.6v4.4a1.6 1.6 0 0 1-1.6 1.6H6a1.6 1.6 0 0 1-1.6-1.6V8a1.6 1.6 0 0 1 1.6-1.6h4.4"/></symbol>
@@ -134,40 +135,51 @@
           <div id="sessionsBox"></div>
         </section>
 
-        <section class="view" data-view="keys">
-          <div class="view-head">
-            <div>
-              <h2><svg class="ic"><use href="#ic-key"/></svg> Ключи <span class="count-pill" id="cntKeys">0</span></h2>
-              <p class="sub">SSH-ключи хранятся в зашифрованном сейфе. «Добавить на сервер» записывает публичную часть в authorized_keys выбранной сессии.</p>
+        <section class="view paged" data-view="keys">
+          <div class="page">
+            <div class="view-head">
+              <div>
+                <h2><svg class="ic"><use href="#ic-key"/></svg> Ключи <span class="count-pill" id="cntKeys">0</span></h2>
+                <p class="sub">Хранятся в зашифрованном сейфе. Приватная часть не покидает клиент — на сервер уходит только публичная.</p>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn ghost" id="btnImportKey" title="Импорт из файла id_ed25519 / id_rsa или буфера обмена"><svg class="ic"><use href="#ic-upload"/></svg><span class="lbl">Импорт</span></button>
+              <button class="btn primary" data-do="genKey" title="Сгенерировать ed25519 или RSA 4096"><svg class="ic"><use href="#ic-plus"/></svg><span class="lbl">Новый ключ</span></button>
             </div>
-            <div class="spacer"></div>
-            <button class="btn ghost" id="btnImportKey"><svg class="ic"><use href="#ic-upload"/></svg><span class="lbl">Импорт ключа</span></button>
-          </div>
 
-          <div id="keysBox"></div>
+            <div id="keysBox"></div>
+          </div>
         </section>
 
-        <section class="view" data-view="tunnels">
-          <div class="view-head">
-            <div>
-              <h2><svg class="ic"><use href="#ic-tunnels"/></svg> Пробросы портов <span class="count-pill" id="cntTunnels">0</span></h2>
-              <p class="sub">Локальные туннели поверх активной SSH-сессии (local forward).</p>
+        <section class="view paged" data-view="tunnels">
+          <div class="page">
+            <div class="view-head">
+              <div>
+                <h2><svg class="ic"><use href="#ic-tunnels"/></svg> Пробросы портов <span class="count-pill" id="cntTunnels">0</span></h2>
+                <p class="sub">Порт на этом компьютере ведёт к адресу на сервере через SSH-сессию. Проброс поднимается сам, когда сессия подключается.</p>
+              </div>
+            </div>
+
+            <div id="tunnelsBox"></div>
+
+            <h3 class="set-h">Новый проброс <small>локальный порт должен быть свободен</small></h3>
+            <div class="card set-panel pad tform">
+              <div class="tf-row">
+                <div class="field tf-name"><label class="field-label" for="tName">Имя</label><input class="inp" id="tName" placeholder="postgres" autocomplete="off"></div>
+                <div class="field tf-sess"><label class="field-label" for="tSession">Через сессию</label><select class="sel" id="tSession"></select></div>
+              </div>
+              <div class="tf-row tf-route">
+                <div class="field tf-local"><label class="field-label" for="tLPort">На этом компьютере</label>
+                  <div class="addr"><span class="addr-fix mono">127.0.0.1</span><span class="addr-sep">:</span><input class="inp mono port" id="tLPort" placeholder="5433" inputmode="numeric" autocomplete="off"></div>
+                </div>
+                <span class="tf-arrow"><svg class="ic"><use href="#ic-arrow-right"/></svg></span>
+                <div class="field tf-remote"><label class="field-label" for="tHost">На сервере</label>
+                  <div class="addr"><input class="inp mono" id="tHost" placeholder="127.0.0.1" autocomplete="off"><span class="addr-sep">:</span><input class="inp mono port" id="tRPort" placeholder="5432" inputmode="numeric" autocomplete="off" aria-label="Порт на сервере"></div>
+                </div>
+                <button class="btn primary" id="btnAddTunnel"><svg class="ic"><use href="#ic-plus"/></svg> Добавить</button>
+              </div>
             </div>
           </div>
-
-          <div class="card">
-            <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-plus"/></svg></span> Новый проброс <small>локальный порт должен быть свободен</small></h3>
-            <div class="inline-form">
-              <div class="field"><label class="field-label" for="tName"><svg class="ic"><use href="#ic-note"/></svg> Имя</label><input class="inp" id="tName" placeholder="postgres" autocomplete="off"></div>
-              <div class="field"><label class="field-label" for="tSession"><svg class="ic"><use href="#ic-server"/></svg> Сессия</label><select class="sel" id="tSession"></select></div>
-              <div class="field" style="flex:0 1 116px"><label class="field-label" for="tLPort"><svg class="ic"><use href="#ic-plug"/></svg> Лок. порт</label><input class="inp" id="tLPort" placeholder="5433" inputmode="numeric" autocomplete="off"></div>
-              <div class="field"><label class="field-label" for="tHost"><svg class="ic"><use href="#ic-globe"/></svg> Целевой хост</label><input class="inp" id="tHost" placeholder="127.0.0.1" autocomplete="off"></div>
-              <div class="field" style="flex:0 1 116px"><label class="field-label" for="tRPort"><svg class="ic"><use href="#ic-hash"/></svg> Цел. порт</label><input class="inp" id="tRPort" placeholder="5432" inputmode="numeric" autocomplete="off"></div>
-              <button class="btn primary" id="btnAddTunnel" style="height:39px"><svg class="ic"><use href="#ic-plus"/></svg> Добавить</button>
-            </div>
-          </div>
-
-          <div id="tunnelsBox"></div>
         </section>
 
         <section class="view" data-view="journal">

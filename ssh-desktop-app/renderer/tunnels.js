@@ -14,41 +14,55 @@ function renderTunnels(){
   $('#cntTunnels').textContent=S.tunnels.length;
   updateBadges();
   if(!S.tunnels.length){
-    box.innerHTML='<div class="table-wrap"><div class="empty">'+
+    box.innerHTML='<div class="card set-panel"><div class="empty">'+
       '<div class="empty-ico">'+IC('tunnels')+'</div>'+
       '<h4>Пробросов портов нет</h4>'+
-      '<p>Например, <span class="mono">5433 → 127.0.0.1:5432</span>: база PostgreSQL сервера станет доступна на этом компьютере как <span class="mono">127.0.0.1:5433</span>.</p>'+
-      '<button class="btn primary" data-do="focusTunnelForm">'+IC('plus')+' Заполнить форму</button>'+
-      (S.sessions.length?'':'<p class="hint">Сначала создайте хотя бы одну сессию — туннель строится поверх неё.</p>')+
-      '</div></div></div>';
+      '<p>Например, <span class="mono">5433 → 127.0.0.1:5432</span>: база PostgreSQL сервера станет доступна на этом компьютере как <span class="mono">127.0.0.1:5433</span>. '+
+        (S.sessions.length?'Заполните форму ниже.':'Сначала создайте хотя бы одну сессию — туннель строится поверх неё.')+'</p>'+
+      '</div></div>';
     return;
   }
-  box.innerHTML='<div class="table-wrap"><table><thead><tr><th style="width:190px">Статус</th><th>Имя</th><th style="width:150px">Локально</th><th style="width:210px">На сервере</th><th>Через сессию</th><th style="width:96px"></th></tr></thead><tbody>'+
-    S.tunnels.map(t=>{
-      const s=S.sessions.find(x=>x.id===t.session);
-      const active=tunnelActive[t.id]||0;
-      const status=t.on
-        ? '<span class="pill on"><span class="sdot"></span>активен'+(active?' · '+active+' соед.':'')+'</span>'
-        : (t.auto&&s)
-          ? '<span class="pill warn"><span class="sdot"></span>ждёт подключения</span>'
-          : '<span class="pill off"><span class="sdot"></span>остановлен</span>';
-      return '<tr data-id="'+t.id+'">'+
-        '<td data-l="Статус">'+status+'</td>'+
-        '<td data-l="Имя" class="name">'+esc(t.name)+'</td>'+
-        '<td data-l="Локально" class="mono">127.0.0.1:'+t.lport+'</td>'+
-        '<td data-l="На сервере" class="mono">'+esc(t.host)+':'+t.rport+'</td>'+
-        '<td data-l="Через сессию">'+(s?'<a href="#" class="sess-link" data-s="'+s.id+'" style="text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:6px">'+IC('link')+' '+esc(s.name)+' <span class="osb" style="--osc:'+osOf(s.os).color+';font-size:11px">'+IC(osOf(s.os).icon)+' '+esc(osLabel(s.os,s.osName))+'</span></a>':'<span class="pill err"><span class="sdot"></span>сессия удалена</span>')+'</td>'+
-        '<td data-l=""><div class="row-actions">'+
-          '<button class="ibtn ok" title="'+(t.on?'Остановить':(t.auto?'Отменить автозапуск':'Запустить'))+'" data-do="toggleTunnel" data-arg="'+t.id+'">'+IC(t.on||t.auto?'pause':'play')+'</button>'+
-          '<button class="ibtn x" title="Удалить проброс" data-do="delTunnel" data-arg="'+t.id+'">'+IC('x')+'</button>'+
-        '</div></td></tr>';
-    }).join('')+'</tbody></table></div>';
-  $$('#tunnelsBox .sess-link').forEach(a=>{a.onclick=e=>{
+  // Row: state and name with its session, the route itself, status, then start/stop and delete.
+  box.innerHTML='<div class="card set-panel tlist">'+S.tunnels.map(t=>{
+    const s=S.sessions.find(x=>x.id===t.session);
+    const active=tunnelActive[t.id]||0;
+    const st=t.on?'on':(t.auto&&s)?'wait':'off';
+    const status=st==='on'
+      ? '<span class="pill on"><span class="sdot"></span>активен'+(active?' · '+active+' соед.':'')+'</span>'
+      : st==='wait'
+        ? '<span class="pill warn" title="Запустится, когда сессия подключится"><span class="sdot"></span>ждёт подключения</span>'
+        : '<span class="pill off"><span class="sdot"></span>остановлен</span>';
+    const o=s&&osOf(s.os);
+    return '<div class="trow '+st+'" data-id="'+t.id+'">'+
+      '<span class="t-ico">'+IC('tunnels')+'</span>'+
+      '<div class="tr-main">'+
+        '<b title="'+esc(t.name)+'">'+esc(t.name)+'</b>'+
+        (s?'<button class="tr-sess" data-s="'+s.id+'" title="Открыть сессию в списке" style="--osc:'+o.color+'">'+IC(o.icon)+'<span>'+esc(s.name)+'</span></button>'
+          :'<span class="tr-sess gone">'+IC('alert')+'<span>сессия удалена</span></span>')+
+      '</div>'+
+      '<div class="tr-route">'+
+        '<button class="tr-addr mono" data-do="copyTunnelAddr" data-arg="'+t.id+'" title="Этот адрес открывают программы на компьютере — нажмите, чтобы скопировать">127.0.0.1:'+t.lport+'</button>'+
+        '<span class="tr-arrow">'+IC('arrow-right')+'</span>'+
+        '<span class="tr-dst mono" title="Адрес со стороны сервера">'+esc(t.host)+':'+t.rport+'</span>'+
+      '</div>'+
+      '<div class="tr-st">'+status+'</div>'+
+      '<div class="tr-acts">'+
+        '<button class="ibtn ok" title="'+(t.on?'Остановить':(t.auto?'Отменить автозапуск':'Запустить'))+'" data-do="toggleTunnel" data-arg="'+t.id+'">'+IC(t.on||t.auto?'pause':'play')+'</button>'+
+        '<button class="ibtn x" title="Удалить проброс" data-do="delTunnel" data-arg="'+t.id+'">'+IC('x')+'</button>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'</div>';
+  $$('#tunnelsBox .tr-sess[data-s]').forEach(a=>{a.onclick=e=>{
     e.preventDefault();go('sessions');S.selSession=a.dataset.s;renderSessions();
-    const tr=document.querySelector('#sessionsBox tr[data-id="'+a.dataset.s+'"]');
-    if(tr){tr.classList.add('sel');tr.scrollIntoView({block:'center',behavior:'smooth'});}
+    const el=document.querySelector('#sessionsBox [data-id="'+a.dataset.s+'"]');
+    if(el){el.classList.add('sel');el.scrollIntoView({block:'center',behavior:'smooth'});}
   };});
 }
+window.copyTunnelAddr=id=>{
+  const t=S.tunnels.find(x=>x.id===id);if(!t)return;
+  navigator.clipboard&&navigator.clipboard.writeText('127.0.0.1:'+t.lport).catch(()=>{});
+  toast('127.0.0.1:'+t.lport+' скопирован','ok','Пробросы портов');
+};
 async function startTunnel(t,tab,verbose){
   const r=await window.tunnelAPI.start({tunnelId:t.id,connId:tab.connId,lport:t.lport,host:t.host,rport:t.rport});
   if(!r.ok){t.on=false;renderTunnels();toast('«'+t.name+'»: '+r.error,'err','Проброс не запущен');logEvent('err','tunnel','«'+t.name+'» не запущен: '+r.error,tunnelTarget(t));return false;}

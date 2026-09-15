@@ -4,34 +4,34 @@ function renderKeys(){
   persist();
   const box=$('#keysBox');
   $('#cntKeys').textContent=S.keys.length;
-  box.innerHTML='<div class="kcards">'+
-    '<button class="kcard k-new" data-do="genKey"><span class="sc-new-ico">'+IC('plus')+'</span><b>Новый ключ</b><small>ed25519 или RSA 4096 — создаётся сразу в сейфе</small></button>'+
-    (S.keys.length?'':'<button class="kcard k-new" data-do="importKey"><span class="sc-new-ico">'+IC('upload')+'</span><b>Импорт ключа</b><small>из файла id_ed25519 / id_rsa или буфера обмена</small></button>')+
-    S.keys.map(keyCard).join('')+'</div>';
+  if(!S.keys.length){
+    box.innerHTML='<div class="card set-panel"><div class="empty">'+
+      '<div class="empty-ico">'+IC('key')+'</div>'+
+      '<h4>Ключей пока нет</h4>'+
+      '<p>Создайте новый ключ или импортируйте существующий (<span class="mono">id_ed25519</span>, <span class="mono">id_rsa</span>) — кнопки вверху справа. Затем «На сервер» запишет его в <span class="mono">authorized_keys</span> нужной сессии.</p>'+
+      '</div></div>';
+    return;
+  }
+  box.innerHTML='<div class="card set-panel klist">'+S.keys.map(keyRow).join('')+'</div>';
 }
-// Card: identity on top, fingerprint, the public key itself, where it is used, and the way to put it on a server.
-function keyCard(k){
+// Row: identity and fingerprint, the sessions that log in with it, then actions — copy, save, delete, put on a server.
+function keyRow(k){
   const used=S.sessions.filter(s=>s.keyId===k.id);
   const kind=/rsa/.test(k.type)?'rsa':/ecdsa/.test(k.type)?'ecdsa':'ed';
-  return '<div class="kcard" data-id="'+k.id+'">'+
-    '<div class="k-top">'+
-      '<span class="k-ico '+kind+'">'+IC('key')+'</span>'+
-      '<div class="k-t"><b title="'+esc(k.name)+'">'+esc(k.name)+'</b><small><span class="tag">'+esc(k.type)+'</span>'+(k.passphrase?'<span class="k-pp">'+IC('lock')+' фраза-пароль</span>':'')+'<span>создан '+esc(k.created)+'</span></small></div>'+
-      '<div class="k-acts">'+
-        '<button class="ibtn" title="Показать и сохранить публичный ключ" data-do="exportKey" data-arg="'+k.id+'">'+IC('download')+'</button>'+
-        '<button class="ibtn x" title="Удалить ключ из клиента" data-do="delKey" data-arg="'+k.id+'">'+IC('x')+'</button>'+
-      '</div>'+
+  return '<div class="krow" data-id="'+k.id+'">'+
+    '<span class="k-ico '+kind+'">'+IC('key')+'</span>'+
+    '<div class="kr-main">'+
+      '<div class="kr-name"><b title="'+esc(k.name)+'">'+esc(k.name)+'</b><span class="tag">'+esc(k.type)+'</span>'+(k.passphrase?'<span class="k-pp" title="Приватная часть защищена фразой-паролем">'+IC('lock')+' фраза-пароль</span>':'')+'</div>'+
+      '<div class="kr-meta"><button class="kr-fp mono" data-do="copyFp" data-arg="'+k.id+'" title="Отпечаток — нажмите, чтобы скопировать">'+esc(k.fp)+'</button><span class="kr-date">создан '+esc(k.created)+'</span></div>'+
     '</div>'+
-    '<button class="k-fp" data-do="copyFp" data-arg="'+k.id+'" title="Отпечаток — нажмите, чтобы скопировать">'+IC('hash')+'<span class="mono">'+esc(k.fp)+'</span></button>'+
-    '<div class="k-pub">'+
-      '<div class="k-pub-h"><span>Публичный ключ</span><button class="k-copy" data-do="copyPub" data-arg="'+k.id+'">'+IC('copy')+' Копировать</button></div>'+
-      '<code class="mono">'+esc(k.publicKey)+'</code>'+
-    '</div>'+
-    '<div class="k-foot">'+
-      (used.length
-        ?'<div class="k-used"><span class="k-used-l">В сессиях</span>'+used.map(s=>{const o=osOf(s.os);return '<span class="k-chip" style="--osc:'+o.color+'">'+IC(o.icon)+esc(s.name)+'</span>';}).join('')+'</div>'
-        :'<div class="k-used"><span class="hint" style="margin:0">Пока не используется в сессиях</span></div>')+
-      '<button class="btn primary sm" data-do="installKey" data-arg="'+k.id+'">'+IC('upload')+' Добавить на сервер</button>'+
+    '<div class="kr-used">'+(used.length
+      ?used.map(s=>{const o=osOf(s.os);return '<span class="k-chip" style="--osc:'+o.color+'" title="Сессия «'+esc(s.name)+'» входит по этому ключу">'+IC(o.icon)+esc(s.name)+'</span>';}).join('')
+      :'<span class="kr-none">не используется</span>')+'</div>'+
+    '<div class="kr-acts">'+
+      '<button class="ibtn" title="Копировать публичный ключ" data-do="copyPub" data-arg="'+k.id+'">'+IC('copy')+'</button>'+
+      '<button class="ibtn" title="Показать и сохранить публичный ключ" data-do="exportKey" data-arg="'+k.id+'">'+IC('download')+'</button>'+
+      '<button class="ibtn x" title="Удалить ключ из клиента" data-do="delKey" data-arg="'+k.id+'">'+IC('x')+'</button>'+
+      '<button class="btn sm kr-install" title="Дописать публичный ключ в ~/.ssh/authorized_keys выбранной сессии" data-do="installKey" data-arg="'+k.id+'">'+IC('upload')+' На сервер</button>'+
     '</div>'+
   '</div>';
 }
@@ -173,7 +173,7 @@ function genKey(){
       '</div>'+
       '<div class="field" style="margin-top:14px"><label class="field-label">'+IC('lock')+' Фраза-пароль (необязательно)</label>'+
         pwInput('gPass','дополнительная защита приватной части','')+'</div>'+
-      '<p class="hint" id="gTxt" style="margin:12px 0 0">'+IC('info')+' Потом нажмите «Добавить на сервер» на карточке ключа — он запишется в ~/.ssh/authorized_keys нужной сессии.</p>',
+      '<p class="hint" id="gTxt" style="margin:12px 0 0">'+IC('info')+' Потом нажмите «На сервер» в строке ключа — он запишется в ~/.ssh/authorized_keys нужной сессии.</p>',
     footer:'<button class="btn ghost left" data-close>'+IC('x')+' Отмена</button><button class="btn primary" id="gGo">'+IC('sparkles')+' Сгенерировать</button>',
     onMount:el=>{
       el.querySelectorAll('#gType .seg-item').forEach(b=>{b.onclick=()=>{
@@ -194,7 +194,7 @@ function genKey(){
         const k=addKeyToClient(r,r.privateKey,pass,name);
         if(!k)return;
         m.close();
-        toast(k.type.toUpperCase()+' ключ «'+name+'» создан — «Добавить на сервер» на его карточке','ok','Генерация завершена');
+        toast(k.type.toUpperCase()+' ключ «'+name+'» создан — «На сервер» в его строке','ok','Генерация завершена');
       };
     }});
 }
