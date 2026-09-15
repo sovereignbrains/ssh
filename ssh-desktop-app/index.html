@@ -196,155 +196,202 @@
         </section>
 
         <section class="view" data-view="settings">
-          <div class="view-head">
-            <div>
+          <div class="set-layout">
+            <nav class="set-nav" id="setNav" aria-label="Разделы настроек">
               <h2><svg class="ic"><use href="#ic-settings"/></svg> Настройки</h2>
-              <p class="sub">Внешний вид, хранилище, сейф, локальная оболочка и терминал.</p>
-            </div>
-            <div class="spacer"></div>
-            <button class="btn ghost" id="btnResetSettings"><svg class="ic"><use href="#ic-refresh"/></svg><span class="lbl">Сбросить</span></button>
-          </div>
-
-          <div class="settings-grid">
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-palette"/></svg></span> Внешний вид <small id="themeNow">Edge</small></h3>
-              <label class="field-label"><svg class="ic"><use href="#ic-palette"/></svg> Тема</label>
-              <div id="themeOpts">
-                <button class="opt" data-mode="edge">
-                  <span class="swatch" style="background:linear-gradient(135deg,#3ddbc2,#4cc3f0)"></span>
-                  <span class="otxt"><b>Edge — сине-зелёная</b><small>Графит, холодный акцент, высокий контраст</small></span>
-                  <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
-                </button>
-                <button class="opt" data-mode="night">
-                  <span class="swatch" style="background:linear-gradient(135deg,#f3a53c,#ef7c3f)"></span>
-                  <span class="otxt"><b>Ночь — серо-оранжевая</b><small>Тёплый серый, меньше синего света</small></span>
-                  <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
-                </button>
-                <button class="opt" data-mode="auto">
-                  <span class="swatch" style="background:conic-gradient(#3ddbc2 0 50%,#f3a53c 50% 100%)"></span>
-                  <span class="otxt"><b>Авто</b><small>20:00–07:00 — ночь, иначе Edge</small></span>
-                  <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
-                </button>
+              <button class="set-link on" data-sec="setAppearance"><svg class="ic"><use href="#ic-palette"/></svg> Внешний вид</button>
+              <button class="set-link" data-sec="setTerminal"><svg class="ic"><use href="#ic-type"/></svg> Терминал</button>
+              <button class="set-link" data-sec="setVault"><svg class="ic"><use href="#ic-shield"/></svg> Сейф</button>
+              <button class="set-link" data-sec="setSync"><svg class="ic"><use href="#ic-cloud"/></svg> Синхронизация</button>
+              <button class="set-link" data-sec="setStorage"><svg class="ic"><use href="#ic-drive"/></svg> Хранилище</button>
+              <button class="set-link" data-sec="setClaude"><svg class="ic"><use href="#ic-claude"/></svg> Claude Code</button>
+              <button class="set-link" data-sec="setAbout"><svg class="ic"><use href="#ic-info"/></svg> О программе</button>
+              <div class="set-nav-foot">
+                <button class="btn ghost sm" id="btnResetSettings" title="Тема, автоблокировка, оболочка и терминал — к значениям по умолчанию"><svg class="ic"><use href="#ic-refresh"/></svg> Сбросить настройки</button>
               </div>
-            </div>
+            </nav>
 
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-drive"/></svg></span> Хранилище</h3>
-              <label class="field-label"><svg class="ic"><use href="#ic-drive"/></svg> Режим</label>
-              <div id="storeOpts" style="margin-bottom:15px">
-                <button class="opt" data-store="std">
-                  <span class="tile"><svg class="ic"><use href="#ic-folder"/></svg></span>
-                  <span class="otxt"><b>Стандартный</b><small>папка профиля Windows</small></span>
-                  <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
-                </button>
-                <button class="opt" data-store="portable">
-                  <span class="tile"><svg class="ic"><use href="#ic-save"/></svg></span>
-                  <span class="otxt"><b>Переносимый</b><small>своя папка, например на флешке</small></span>
-                  <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
-                </button>
-              </div>
-              <label class="field-label"><svg class="ic"><use href="#ic-folder"/></svg> Каталог данных</label>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <input class="inp mono" id="dataDir" style="flex:1 1 200px" readonly value="">
-                <button class="btn" id="btnPickDir"><svg class="ic"><use href="#ic-folder"/></svg> Выбрать папку…</button>
-                <button class="btn ghost" id="btnDefDir"><svg class="ic"><use href="#ic-refresh"/></svg> По умолчанию</button>
-              </div>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:15px;padding-top:14px;border-top:1px solid var(--line)">
-                <button class="btn ghost" id="btnClearTemp"><svg class="ic"><use href="#ic-eraser"/></svg> Удалить временные файлы</button>
-                <span class="hint" id="tempInfo" style="margin:0">кэш: —</span>
-              </div>
-              <p class="hint" style="margin:11px 0 0">Файл <span class="mono">secrets.vault</span> (AES-256-GCM) и <span class="mono">known_hosts.json</span> переносятся в выбранную папку.</p>
-            </div>
-
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-cloud"/></svg></span> Синхронизация <small>Google Диск</small></h3>
-              <div id="syncBox"><span class="hint" style="margin:0">проверка…</span></div>
-            </div>
-
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-shield"/></svg></span> Сейф</h3>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px">
-                <button class="btn" id="btnChangePass"><svg class="ic"><use href="#ic-key"/></svg> Сменить мастер-пароль</button>
-                <button class="btn" id="btnBackup"><svg class="ic"><use href="#ic-save"/></svg> Резервная копия</button>
-                <button class="btn ghost" id="btnLockNow"><svg class="ic"><use href="#ic-lock"/></svg> Заблокировать</button>
-              </div>
-              <label class="field-label"><svg class="ic"><use href="#ic-clock"/></svg> Автоблокировка</label>
-              <div class="seg" id="autolockSeg" style="width:100%">
-                <button class="seg-item" data-min="5">5 минут</button>
-                <button class="seg-item on" data-min="15">15 минут</button>
-                <button class="seg-item" data-min="60">1 час</button>
-                <button class="seg-item" data-min="0">Никогда</button>
-              </div>
-              <p class="hint" style="margin:11px 0 0">Статус: <b id="vaultStateTxt" style="color:var(--ok)">открыт</b> · ключ AES-256-GCM в памяти процесса.</p>
-            </div>
-
-            <div class="card">
-              <h3 class="card-title"><span class="ci ci-claude"><svg class="ic"><use href="#ic-claude"/></svg></span> Claude Code</h3>
-              <div id="clSettingsState"><span class="hint" style="margin:0">проверка…</span></div>
-              <p class="hint" style="margin:11px 0 0">Используется установленный Claude Code и ваш вход в него. Агент запускается через ACP (claude-agent-acp), локальные инструменты отключены — он работает только с сервером выбранной SSH-сессии.</p>
-              <button class="btn ghost sm" id="btnClaudeDetect" style="margin-top:12px"><svg class="ic"><use href="#ic-refresh"/></svg> Проверить</button>
-            </div>
-
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-cpu"/></svg></span> Локальный shell</h3>
-              <div class="grid2">
-                <div class="field">
-                  <label class="field-label" for="shellSel"><svg class="ic"><use href="#ic-terminal"/></svg> Оболочка</label>
-                  <select class="sel" id="shellSel">
-                    <option value="pwsh">PowerShell 7</option>
-                    <option value="wps">Windows PowerShell</option>
-                    <option value="cmd">cmd</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="shellDir"><svg class="ic"><use href="#ic-folder"/></svg> Стартовая папка</label>
-                  <div style="display:flex;gap:8px">
-                    <input class="inp mono" id="shellDir" readonly value="">
-                    <button class="ibtn" id="btnPickShellDir" title="Выбрать папку…"><svg class="ic"><use href="#ic-folder"/></svg></button>
+            <div class="set-main">
+              <section class="set-sec" id="setAppearance">
+                <h3 class="set-h">Внешний вид <small id="themeNow">Edge</small></h3>
+                <div class="card set-panel">
+                  <div class="srow col">
+                    <div class="srow-t"><b>Тема</b><small>В режиме «Авто» тема меняется сама по времени суток.</small></div>
+                    <div class="set-tiles" id="themeOpts">
+                      <button class="opt" data-mode="edge">
+                        <span class="swatch" style="background:linear-gradient(135deg,#3ddbc2,#4cc3f0)"></span>
+                        <span class="otxt"><b>Edge — сине-зелёная</b><small>графит, холодный акцент</small></span>
+                        <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
+                      </button>
+                      <button class="opt" data-mode="night">
+                        <span class="swatch" style="background:linear-gradient(135deg,#f3a53c,#ef7c3f)"></span>
+                        <span class="otxt"><b>Ночь — серо-оранжевая</b><small>тёплый, меньше синего света</small></span>
+                        <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
+                      </button>
+                      <button class="opt" data-mode="auto">
+                        <span class="swatch" style="background:conic-gradient(#3ddbc2 0 50%,#f3a53c 50% 100%)"></span>
+                        <span class="otxt"><b>Авто</b><small>ночью с 20:00 до 07:00</small></span>
+                        <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <button class="btn ghost sm" id="btnTestShell" style="margin-top:13px"><svg class="ic"><use href="#ic-play"/></svg> Запустить локальный shell</button>
-            </div>
+              </section>
 
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-type"/></svg></span> Терминал</h3>
-              <div class="grid2">
-                <div class="field">
-                  <label class="field-label" for="fontSel"><svg class="ic"><use href="#ic-type"/></svg> Шрифт</label>
-                  <select class="sel" id="fontSel">
-                    <option value="'JetBrains Mono','Cascadia Mono',monospace">JetBrains Mono</option>
-                    <option value="'Cascadia Mono','Cascadia Code',monospace">Cascadia Mono</option>
-                    <option value="'Consolas','Courier New',monospace">Consolas</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label"><svg class="ic"><use href="#ic-activity"/></svg> Размер</label>
-                  <div class="stepper">
-                    <button id="fsMinus" title="Меньше"><svg class="ic"><use href="#ic-minus"/></svg></button>
-                    <span class="val" id="fsVal">13,5 px</span>
-                    <button id="fsPlus" title="Больше"><svg class="ic"><use href="#ic-plus"/></svg></button>
+              <section class="set-sec" id="setTerminal">
+                <h3 class="set-h">Терминал</h3>
+                <div class="card set-panel">
+                  <div class="srow">
+                    <div class="srow-t"><b>Шрифт</b><small>Для SSH-вкладок и локальных оболочек.</small></div>
+                    <div class="srow-c">
+                      <select class="sel" id="fontSel">
+                        <option value="'JetBrains Mono','Cascadia Mono',monospace">JetBrains Mono</option>
+                        <option value="'Cascadia Mono','Cascadia Code',monospace">Cascadia Mono</option>
+                        <option value="'Consolas','Courier New',monospace">Consolas</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Размер шрифта</b></div>
+                    <div class="srow-c">
+                      <div class="stepper">
+                        <button id="fsMinus" title="Меньше"><svg class="ic"><use href="#ic-minus"/></svg></button>
+                        <span class="val" id="fsVal">13,5 px</span>
+                        <button id="fsPlus" title="Больше"><svg class="ic"><use href="#ic-plus"/></svg></button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Буфер прокрутки</b><small>Сколько строк истории хранится в каждой вкладке.</small></div>
+                    <div class="srow-c"><input class="inp num" id="scrollback" type="number" min="100" max="100000" step="500" value="10000"><span class="hint" style="margin:0">строк</span></div>
+                  </div>
+                  <div class="srow col">
+                    <div class="term-out set-preview" id="termPreview"><div class="l t-dim">— предпросмотр —</div><div class="l"><span class="t-prompt">root@server</span><span class="t-dim">:</span><span class="t-info">~</span><span class="t-dim"># </span><span class="t-cmd">echo "Съешь ещё булок"</span></div><div class="l">0O 1lI {}[] =&gt; ~/.ssh</div></div>
                   </div>
                 </div>
-              </div>
-              <div class="field" style="margin-top:14px">
-                <label class="field-label" for="scrollback"><svg class="ic"><use href="#ic-sort"/></svg> Прокрутка, строк</label>
-                <input class="inp" id="scrollback" type="number" min="100" max="100000" step="500" value="10000">
-              </div>
-              <div class="term-out" id="termPreview" style="flex:none;height:100px;margin-top:14px;border-radius:12px;border:1px solid var(--line)"><div class="l t-dim">— предпросмотр —</div><div class="l"><span class="t-prompt">root@server</span><span class="t-dim">:</span><span class="t-info">~</span><span class="t-dim"># </span><span class="t-cmd">echo "Съешь ещё булок"</span></div><div class="l">0O 1lI {}[] =&gt; ~/.ssh</div></div>
-            </div>
 
-            <div class="card">
-              <h3 class="card-title"><span class="ci"><svg class="ic"><use href="#ic-info"/></svg></span> О программе</h3>
-              <div class="about">
-                <img src="assets/icon-256.png" alt="" draggable="false">
-                <div class="about-t">
-                  <b>ssh <span id="aboutVer"></span></b>
-                  <p>Личный SSH-клиент: сессии и ключи в зашифрованном сейфе, терминал, SFTP, пробросы портов и Claude Code на сервере.</p>
-                  <div class="about-v mono" id="aboutStack"></div>
+                <h4 class="set-sub">Локальная оболочка</h4>
+                <div class="card set-panel">
+                  <div class="srow">
+                    <div class="srow-t"><b>Оболочка</b><small>Что открывается по «+» → «Локальная оболочка».</small></div>
+                    <div class="srow-c">
+                      <select class="sel" id="shellSel">
+                        <option value="pwsh">PowerShell 7</option>
+                        <option value="wps">Windows PowerShell</option>
+                        <option value="cmd">cmd</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Стартовая папка</b></div>
+                    <div class="srow-c">
+                      <input class="inp mono path" id="shellDir" readonly value="">
+                      <button class="btn" id="btnPickShellDir"><svg class="ic"><use href="#ic-folder"/></svg> Выбрать…</button>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Проверить</b><small>Открыть вкладку с выбранной оболочкой.</small></div>
+                    <div class="srow-c"><button class="btn ghost" id="btnTestShell"><svg class="ic"><use href="#ic-play"/></svg> Запустить</button></div>
+                  </div>
                 </div>
-              </div>
-              <div class="upd-box" id="updBox"></div>
+              </section>
+
+              <section class="set-sec" id="setVault">
+                <h3 class="set-h">Сейф</h3>
+                <div class="card set-panel">
+                  <div class="srow">
+                    <div class="srow-t"><b>Состояние: <span id="vaultStateTxt" style="color:var(--ok)">открыт</span></b><small>Ключ AES-256-GCM хранится только в памяти процесса.</small></div>
+                    <div class="srow-c"><button class="btn ghost" id="btnLockNow"><svg class="ic"><use href="#ic-lock"/></svg> Заблокировать</button></div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Автоблокировка</b><small>После бездействия сейф закроется и попросит мастер-пароль.</small></div>
+                    <div class="srow-c">
+                      <div class="seg" id="autolockSeg">
+                        <button class="seg-item" data-min="5">5 минут</button>
+                        <button class="seg-item on" data-min="15">15 минут</button>
+                        <button class="seg-item" data-min="60">1 час</button>
+                        <button class="seg-item" data-min="0">Никогда</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Мастер-пароль</b><small>Сейф будет перешифрован новым паролем.</small></div>
+                    <div class="srow-c"><button class="btn" id="btnChangePass"><svg class="ic"><use href="#ic-key"/></svg> Сменить…</button></div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Резервная копия</b><small>Файл сейфа в выбранную папку; открывается тем же мастер-паролем.</small></div>
+                    <div class="srow-c"><button class="btn" id="btnBackup"><svg class="ic"><use href="#ic-save"/></svg> Сохранить копию…</button></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="set-sec" id="setSync">
+                <h3 class="set-h">Синхронизация <small>Google Диск</small></h3>
+                <div class="card set-panel pad">
+                  <div id="syncBox"><span class="hint" style="margin:0">проверка…</span></div>
+                </div>
+              </section>
+
+              <section class="set-sec" id="setStorage">
+                <h3 class="set-h">Хранилище</h3>
+                <div class="card set-panel">
+                  <div class="srow col">
+                    <div class="srow-t"><b>Режим</b><small>Где лежат <span class="mono">secrets.vault</span> и <span class="mono">known_hosts.json</span> — при смене они переносятся.</small></div>
+                    <div class="set-tiles two" id="storeOpts">
+                      <button class="opt" data-store="std">
+                        <span class="tile"><svg class="ic"><use href="#ic-folder"/></svg></span>
+                        <span class="otxt"><b>Стандартный</b><small>папка профиля Windows</small></span>
+                        <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
+                      </button>
+                      <button class="opt" data-store="portable">
+                        <span class="tile"><svg class="ic"><use href="#ic-save"/></svg></span>
+                        <span class="otxt"><b>Переносимый</b><small>своя папка, например на флешке</small></span>
+                        <span class="check"><svg class="ic"><use href="#ic-check"/></svg></span>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="srow col">
+                    <div class="srow-t"><b>Каталог данных</b></div>
+                    <div class="set-line">
+                      <input class="inp mono" id="dataDir" readonly value="">
+                      <button class="btn" id="btnPickDir"><svg class="ic"><use href="#ic-folder"/></svg> Выбрать папку…</button>
+                      <button class="btn ghost" id="btnDefDir"><svg class="ic"><use href="#ic-refresh"/></svg> По умолчанию</button>
+                    </div>
+                  </div>
+                  <div class="srow">
+                    <div class="srow-t"><b>Временные файлы</b><small><span id="tempInfo">кэш: —</span> · сейф, настройки и known_hosts не затрагиваются</small></div>
+                    <div class="srow-c"><button class="btn ghost" id="btnClearTemp"><svg class="ic"><use href="#ic-eraser"/></svg> Очистить</button></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="set-sec" id="setClaude">
+                <h3 class="set-h">Claude Code</h3>
+                <div class="card set-panel">
+                  <div class="srow">
+                    <div class="srow-t"><b>Установка на этом компьютере</b><small>Используется установленный Claude Code и ваш вход в него. Агент запускается через ACP (claude-agent-acp) с отключёнными локальными инструментами — он работает только с сервером выбранной SSH-сессии.</small></div>
+                    <div class="srow-c"><button class="btn ghost" id="btnClaudeDetect"><svg class="ic"><use href="#ic-refresh"/></svg> Проверить</button></div>
+                  </div>
+                  <div class="srow col">
+                    <div id="clSettingsState"><span class="hint" style="margin:0">проверка…</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="set-sec" id="setAbout">
+                <h3 class="set-h">О программе</h3>
+                <div class="card set-panel pad">
+                  <div class="about">
+                    <img src="assets/icon-256.png" alt="" draggable="false">
+                    <div class="about-t">
+                      <b>ssh <span id="aboutVer"></span></b>
+                      <p>Личный SSH-клиент: сессии и ключи в зашифрованном сейфе, терминал, SFTP, пробросы портов и Claude Code на сервере.</p>
+                      <div class="about-v mono" id="aboutStack"></div>
+                    </div>
+                  </div>
+                  <div class="upd-box" id="updBox"></div>
+                </div>
+              </section>
             </div>
           </div>
         </section>

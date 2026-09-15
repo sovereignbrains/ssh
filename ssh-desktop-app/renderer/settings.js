@@ -15,6 +15,24 @@ function renderSettings(){
   const pv=$('#termPreview');pv.style.fontFamily=S.font;pv.style.fontSize=S.fontSize+'px';
   renderLocalStrip();
 }
+// Section menu: a click scrolls to the section; while scrolling, the section at the top is highlighted.
+const setScroller=$('#content');
+let setNavPinned=null,setNavTimer=0;
+const markSetNav=id=>$$('#setNav .set-link').forEach(l=>l.classList.toggle('on',l.dataset.sec===id));
+$$('#setNav .set-link').forEach(l=>{l.onclick=()=>{
+  setNavPinned=l.dataset.sec;markSetNav(setNavPinned);
+  $('#'+l.dataset.sec).scrollIntoView({behavior:'smooth',block:'start'});
+};});
+setScroller.addEventListener('scroll',()=>{
+  if(S.view!=='settings')return;
+  // A section near the bottom can't reach the top: keep the clicked one lit until the scroll settles.
+  if(setNavPinned){clearTimeout(setNavTimer);setNavTimer=setTimeout(()=>{setNavPinned=null;},200);return;}
+  const secs=$$('.set-sec'),line=setScroller.getBoundingClientRect().top+90;
+  let cur=secs[0];
+  if(setScroller.scrollTop+setScroller.clientHeight>=setScroller.scrollHeight-4)cur=secs[secs.length-1];
+  else secs.forEach(s=>{if(s.getBoundingClientRect().top<=line)cur=s;});
+  markSetNav(cur.id);
+},{passive:true});
 $$('#storeOpts .opt').forEach(o=>{o.onclick=()=>changeStore(o.dataset.store,false);});
 $$('#autolockSeg .seg-item').forEach(b=>{b.onclick=()=>{
   S.autolock=+b.dataset.min;renderSettings();
