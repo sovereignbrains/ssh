@@ -258,6 +258,7 @@ async function connectSession(id,rowOrBtn,opts){
   logEvent('ok','connect','Подключено за '+total+' мс · вход по '+(s.auth==='key'?'ключу':'паролю'),sessTarget(s));
   if(earlyOs){delete pendingOs[connId];applyDetectedOs(tab,earlyOs);}
   renderTunnelForm();
+  if(CL.open)renderClaude();
   autostartTunnels(id);
 }
 window.connectSession=connectSession;
@@ -327,7 +328,7 @@ function renderSessions(){
 function sessionCard(s){
   const o=osOf(s.os);
   const pill=s.status==='active'||s.status==='error'||s.status==='connecting'?statusPill(s.status):'';
-  return '<div class="scard'+(S.selSession===s.id?' sel':'')+'" data-id="'+s.id+'" data-dbl="connect" data-arg="'+s.id+'" style="--osc:'+o.color+'" title="Двойной клик — подключиться">'+
+  return '<div class="scard'+(S.selSession===s.id?' sel':'')+'" data-id="'+s.id+'" data-do="connect" data-arg="'+s.id+'" style="--osc:'+o.color+'" title="Подключиться">'+
     '<div class="sc-prev">'+
       '<span class="sc-os">'+IC(o.icon)+'</span>'+
       '<div class="sc-top">'+pill+'<div class="sc-acts">'+
@@ -335,7 +336,6 @@ function sessionCard(s){
         '<button class="ibtn x" title="Удалить" data-do="delSession" data-arg="'+s.id+'">'+IC('x')+'</button>'+
       '</div></div>'+
       '<div class="sc-term"><span class="p">'+esc(s.user)+'@'+esc(s.host)+'</span><span class="dim">:</span><span class="d">~</span><span class="dim">'+(s.user==='root'?'#':'$')+'</span><i></i></div>'+
-      '<button class="sc-play" title="Подключиться" data-do="connect" data-arg="'+s.id+'">'+IC('play')+'</button>'+
     '</div>'+
     '<div class="sc-body">'+
       '<div class="sc-name">'+esc(s.name)+'</div>'+

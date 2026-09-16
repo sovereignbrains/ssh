@@ -145,14 +145,23 @@ function renderClaude(){
     return;
   }
   if(!tabs.length){
-    box.innerHTML='<div class="empty cl-none"><div class="empty-ico cl-logo-ico">'+IC('claude')+'</div><h4>Нет активных SSH-подключений</h4><p>Claude работает на сервере подключённой сессии. Подключитесь — и можно начинать.</p>'+
-      '<button class="btn primary" data-do="go" data-arg="sessions">'+IC('sessions')+' К списку сессий</button></div>';
+    const saved=S.sessions.slice().sort((a,b)=>a.name.localeCompare(b.name));
+    box.innerHTML='<div class="empty cl-none"><div class="empty-ico cl-logo-ico">'+IC('claude')+'</div><h4>Нет активных SSH-подключений</h4>'+
+      '<p>Claude работает на сервере подключённой сессии'+(saved.length?' — выберите, куда подключиться':'. Подключитесь — и можно начинать')+'.</p>'+
+      (saved.length?'<div class="cl-connect">'+saved.slice(0,7).map(s=>{
+        const o=osOf(s.os);
+        return '<button class="cl-mi" data-do="connect" data-arg="'+s.id+'">'+
+          '<span class="cl-pk-os" style="--osc:'+o.color+'">'+IC(o.icon)+'</span>'+
+          '<span class="cl-mi-t"><b>'+esc(s.name)+'</b><small>'+esc(s.user+'@'+s.host+(String(s.port)!=='22'?':'+s.port:''))+'</small></span>'+
+          '<span class="cl-mi-ck">'+IC('play')+'</span></button>';
+      }).join('')+'</div>':'')+
+      '<button class="btn '+(saved.length?'ghost':'primary')+'" data-do="go" data-arg="sessions">'+IC('sessions')+' К списку сессий</button></div>';
     return;
   }
   const chat=CL.chats[CL.connId];
   box.innerHTML='<div class="cl-wrap">'+
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
-      '<button class="btn sm ghost" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
+      '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-compose"><div class="cl-box">'+
