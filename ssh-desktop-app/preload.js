@@ -50,11 +50,12 @@ contextBridge.exposeInMainWorld('vaultAPI', {
 
 contextBridge.exposeInMainWorld('agentAPI', {
   detect: (force) => ipcRenderer.invoke('agent:detect', { force }),
-  start: (connId) => ipcRenderer.invoke('agent:start', { connId }),
+  start: (connId, profileId, fresh) => ipcRenderer.invoke('agent:start', { connId, profileId, fresh }),
+  forget: (profileId) => ipcRenderer.invoke('agent:forget', { profileId }),
   prompt: (chatId, text) => ipcRenderer.invoke('agent:prompt', { chatId, text }),
   cancel: (chatId) => ipcRenderer.invoke('agent:cancel', { chatId }),
   close: (chatId) => ipcRenderer.invoke('agent:close', { chatId }),
-  approve: (approvalId, allow) => ipcRenderer.send('agent:approval-decision', { approvalId, allow }),
+  approve: (approvalId, allow, always) => ipcRenderer.send('agent:approval-decision', { approvalId, allow, always }),
   choosePermission: (requestId, optionId) => ipcRenderer.send('agent:permission-decision', { requestId, optionId }),
   onStatus: (cb) => ipcRenderer.on('agent:status', (event, p) => cb(p)),
   onUpdate: (cb) => ipcRenderer.on('agent:update', (event, p) => cb(p)),

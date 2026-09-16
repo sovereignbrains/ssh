@@ -1,6 +1,7 @@
 "use strict";
 /* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
-const CL={detect:null,connId:null,chats:{},drafts:{},renderQueued:false,open:false,big:false};
+const CL={detect:null,connId:null,chats:{},drafts:{},freshWanted:{},renderQueued:false,open:false,big:false};
+function clProfileId(connId){const t=clTab(connId);return t&&t.session||null;}
 const CL_TOOL_LABELS={run_command:'Команда',read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',edit_file:'Правка файла'};
 function clShortTool(name){const m=/^mcp__ssh__(.+)$/.exec(name||'');return m?m[1]:(name||'');}
 function clChatById(chatId){return Object.values(CL.chats).find(c=>c.chatId===chatId)||null;}
@@ -50,7 +51,7 @@ function clItemHtml(it){
       (subject?'<div class="cl-subject mono">'+esc(subject)+'</div>':'')+
       (ap&&ap.detail?'<details '+(ap.tool!=='run_command'?'open':'')+' class="cl-out"><summary>'+(ap.tool==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(ap.detail)+'</pre></details>':'')+
       (ap?(ap.state==='pending'
-        ?'<div class="cl-actions"><span class="hint" style="margin:0 6px 0 0;align-self:center">Нужно ваше подтверждение</span><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
+        ?'<div class="cl-actions"><span class="hint" style="margin:0 6px 0 0;align-self:center">Нужно ваше подтверждение</span><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для «'+esc(label)+'» на этом сервере">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
         :'<div class="cl-actions"><span class="pill '+(ap.state==='allowed'?'on':ap.state==='denied'?'err':'off')+'"><span class="sdot"></span>'+(ap.state==='allowed'?'разрешено':ap.state==='denied'?'отклонено':'отменено')+'</span></div>'):'')+
       (out?'<details class="cl-out"><summary>вывод</summary><pre>'+esc(out.length>6000?out.slice(0,6000)+'\n…':out)+'</pre></details>':'')+'</div>';
   }
@@ -61,7 +62,7 @@ function clItemHtml(it){
       '<div class="cl-card-h">'+IC('shield')+' '+esc(titles[it.tool]||'Claude запрашивает действие')+'</div>'+
       '<pre class="cl-subject-pre">'+esc(it.summary)+'</pre>'+
       (it.detail?'<details '+(it.tool!=='run_command'?'open':'')+' class="cl-out"><summary>'+(it.tool==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(it.detail)+'</pre></details>':'')+
-      (pending?'<div class="cl-actions"><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
+      (pending?'<div class="cl-actions"><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для этого на этом сервере">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
         :'<div class="cl-actions"><span class="pill '+(it.state==='allowed'?'on':it.state==='denied'?'err':'off')+'"><span class="sdot"></span>'+(it.state==='allowed'?'разрешено':it.state==='denied'?'отклонено':'отменено')+'</span></div>')+'</div>';
   }
   if(it.kind==='permission'){
@@ -151,6 +152,7 @@ function renderClaude(){
   const chat=CL.chats[CL.connId];
   box.innerHTML='<div class="cl-wrap">'+
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
+      '<button class="btn sm ghost" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-compose"><div class="cl-box">'+
@@ -173,6 +175,16 @@ function renderClaude(){
   $('#clNew').onclick=async()=>{
     const c=CL.chats[CL.connId];
     if(c&&c.state!=='closed')await window.agentAPI.close(c.chatId);
+    CL.freshWanted[CL.connId]=true;
+    delete CL.chats[CL.connId];renderClaude();$('#clText').focus();
+  };
+  $('#clForget').onclick=async()=>{
+    const ok=await confirmModal({title:'Забыть чат с Claude?',text:'Клод забудет разговор с этим сервером и снова начнёт спрашивать подтверждение на каждое действие.',ok:'Забыть'});
+    if(!ok)return;
+    const c=CL.chats[CL.connId];
+    if(c&&c.state!=='closed')await window.agentAPI.close(c.chatId);
+    await window.agentAPI.forget(clProfileId(CL.connId));
+    CL.freshWanted[CL.connId]=true;
     delete CL.chats[CL.connId];renderClaude();$('#clText').focus();
   };
   const log=$('#clLog');
@@ -181,10 +193,10 @@ function renderClaude(){
     if(a){
       const card=a.closest('[data-approval]'),it=clFindItem('approvalId',card.dataset.approval);
       if(!it||it.state!=='pending')return;
-      const allow=a.dataset.allow==='1';
+      const allow=a.dataset.allow==='1',always=a.dataset.always==='1';
       it.state=allow?'allowed':'denied';
-      window.agentAPI.approve(it.approvalId,allow);
-      logEvent(allow?'info':'warn','claude',(allow?'Разрешено: ':'Отклонено: ')+(CL_TOOL_LABELS[it.tool]||it.tool)+' — '+it.summary.slice(0,200),clTarget(clChatById(it.chatId)));
+      window.agentAPI.approve(it.approvalId,allow,always);
+      logEvent(allow?'info':'warn','claude',(allow?(always?'Разрешено всегда: ':'Разрешено: '):'Отклонено: ')+(CL_TOOL_LABELS[it.tool]||it.tool)+' — '+it.summary.slice(0,200),clTarget(clChatById(it.chatId)));
       clQueueRender();return;
     }
     const o=e.target.closest('[data-option]');
@@ -211,11 +223,12 @@ async function clSend(){
   if(chat&&(chat.busy||chat.state==='starting'))return;
   ta.value='';delete CL.drafts[CL.connId];clGrow(ta);clSyncSend();
   if(!chat||chat.state==='closed'){
-    const r=await window.agentAPI.start(CL.connId);
+    const fresh=!!CL.freshWanted[CL.connId];delete CL.freshWanted[CL.connId];
+    const r=await window.agentAPI.start(CL.connId,clProfileId(CL.connId),fresh);
     if(!r.ok){toast(r.error,'err','Claude');ta.value=text;CL.drafts[CL.connId]=text;clGrow(ta);clSyncSend();return;}
     const prev=chat?chat.items:[];
     chat=CL.chats[CL.connId]={chatId:r.chatId,connId:CL.connId,state:'starting',busy:true,items:prev,pendingPrompt:text};
-    if(prev.length)chat.items.push({kind:'info',text:'Новый чат — прошлый контекст Claude не помнит'});
+    if(fresh&&prev.length)chat.items.push({kind:'info',text:'Начат новый чат — предыдущий контекст сброшен'});
     logEvent('info','claude','Запущен Claude Code',clTarget(chat));
     chat.items.push({kind:'user',text:text});
     clQueueRender();
@@ -319,6 +332,10 @@ if(window.agentAPI){
   window.agentAPI.onStatus(p=>{
     const chat=clChatById(p.chatId);if(!chat)return;
     chat.state=p.state;
+    if(p.state==='ready'&&p.resumed&&!chat.resumedNoted){
+      chat.resumedNoted=true;
+      chat.items.push({kind:'info',text:'Продолжаю предыдущий разговор — контекст восстановлен'});
+    }
     if(p.state==='ready'&&chat.pendingPrompt){
       const text=chat.pendingPrompt;chat.pendingPrompt=null;
       window.agentAPI.prompt(chat.chatId,text).then(r=>{if(!r.ok){chat.busy=false;chat.items.push({kind:'info',error:true,text:r.error});clQueueRender();}});

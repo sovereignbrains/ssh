@@ -74,15 +74,43 @@ function adapterEntry() {
 module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConnection, sftp, logError }) {
   const chats = new Map(); // chatId -> chat state
   const tokens = new Map(); // bearer token -> chatId
-  const approvals = new Map(); // approvalId -> resolve(bool)
+  const approvals = new Map(); // approvalId -> resolve(allow, always)
   const permissions = new Map(); // requestId -> resolve(optionId|null)
   let mcpPort = 0;
 
+  /* ---- durable per-server memory: resumable ACP session id + "always allow" tool decisions.
+   * Keyed by the saved session's stable profile id (not connId, which is a fresh id per connect
+   * attempt), so a dropped SSH link or an app restart can pick the same Claude conversation back up. */
+  const memoryFile = path.join(app.getPath('userData'), 'claude-memory.json');
+  let memory = {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) memory = parsed;
+  } catch (_) {}
+  function saveMemory() {
+    try { fs.writeFileSync(memoryFile, JSON.stringify(memory, null, 2)); } catch (e) { logError('claude (память)', e); }
+  }
+  function memFor(profileId) {
+    if (!profileId) return null;
+    const m = memory[profileId] || (memory[profileId] = {});
+    if (!m.autoApprove || typeof m.autoApprove !== 'object') m.autoApprove = {};
+    return m;
+  }
+
   /* ---- approvals for remote actions ---- */
   function askApproval(chat, tool, summary, detail) {
+    if (chat.autoApprove.has(tool)) return Promise.resolve(true);
     const approvalId = crypto.randomUUID();
     return new Promise((resolve) => {
-      approvals.set(approvalId, (allow) => { chat.pendingApprovals.delete(approvalId); resolve(!!allow); });
+      approvals.set(approvalId, (allow, always) => {
+        chat.pendingApprovals.delete(approvalId);
+        if (allow && always) {
+          chat.autoApprove.add(tool);
+          const m = memFor(chat.profileId);
+          if (m) { m.autoApprove[tool] = true; saveMemory(); }
+        }
+        resolve(!!allow);
+      });
       chat.pendingApprovals.add(approvalId);
       sendToRenderer('agent:approval', { chatId: chat.chatId, approvalId, tool, summary, detail });
     });
@@ -235,9 +263,9 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   const mcpReady = new Promise((resolve) => mcpHttp.listen(0, '127.0.0.1', () => { mcpPort = mcpHttp.address().port; resolve(); }));
 
   /* ---- ACP chat lifecycle ---- */
-  function status(chat, state, message) {
+  function status(chat, state, message, resumed) {
     chat.state = state;
-    sendToRenderer('agent:status', { chatId: chat.chatId, connId: chat.connId, state, message: message || '' });
+    sendToRenderer('agent:status', { chatId: chat.chatId, connId: chat.connId, state, message: message || '', resumed: !!resumed });
   }
 
   function closeChat(chat, reason) {
@@ -302,12 +330,30 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       chat.ctx = ctx;
       chat.acp = acp;
       await ctx.request(acp.methods.agent.initialize, { protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
-      chat.session = await ctx.buildSession({
-        cwd: workspace,
-        mcpServers: [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }],
-        _meta: { systemPrompt: { append: SYSTEM_APPEND }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } },
-      }).start();
-      status(chat, 'ready');
+      const mcpServers = [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }];
+      const sessionMeta = { systemPrompt: { append: SYSTEM_APPEND }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
+      let resumed = false;
+      if (chat.resumeSessionId) {
+        try {
+          const loadResp = await ctx.request(acp.methods.agent.session.load, {
+            sessionId: chat.resumeSessionId, cwd: workspace, mcpServers, _meta: sessionMeta,
+          });
+          // session/load only returns capability fields, not sessionId — attachSession keys its
+          // update routing off response.sessionId, so we splice the id we asked to load back in.
+          // Attaching after the call means the history the agent replays during it is discarded:
+          // Claude keeps the full context, the chat log starts clean instead of repeating itself.
+          chat.session = ctx.attachSession({ ...loadResp, sessionId: chat.resumeSessionId });
+          resumed = true;
+        } catch (e) {
+          logError('claude (возобновление)', e);
+        }
+      }
+      if (!chat.session) {
+        chat.session = await ctx.buildSession({ cwd: workspace, mcpServers, _meta: sessionMeta }).start();
+      }
+      const mem = memFor(chat.profileId);
+      if (mem) { mem.sessionId = chat.session.sessionId; saveMemory(); }
+      status(chat, 'ready', '', resumed);
       (async () => {
         while (chats.has(chat.chatId)) {
           let m;
@@ -336,15 +382,28 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
 
   ipcMain.handle('agent:detect', async (event, { force } = {}) => detectClaude(!!force));
 
-  ipcMain.handle('agent:start', async (event, { connId }) => {
+  ipcMain.handle('agent:start', async (event, { connId, profileId, fresh }) => {
     if (!getConnection(connId)) return { ok: false, error: 'SSH-сессия не подключена' };
     for (const c of chats.values()) if (c.connId === connId) closeChat(c, 'Начат новый чат');
-    const chat = { chatId: crypto.randomUUID(), connId, token: crypto.randomBytes(32).toString('hex'), state: 'starting', busy: false, pendingApprovals: new Set() };
+    const m = memFor(profileId);
+    const chat = {
+      chatId: crypto.randomUUID(), connId, profileId: profileId || null,
+      token: crypto.randomBytes(32).toString('hex'), state: 'starting', busy: false,
+      pendingApprovals: new Set(),
+      // "Always allow" decisions survive a deliberate new chat; conversation memory does not.
+      autoApprove: new Set(m ? Object.keys(m.autoApprove).filter((k) => m.autoApprove[k]) : []),
+      resumeSessionId: (!fresh && m && m.sessionId) || null,
+    };
     chats.set(chat.chatId, chat);
     tokens.set(chat.token, chat.chatId);
     status(chat, 'starting');
     startChat(chat).catch((e) => closeChat(chat, (e && e.message) || String(e)));
     return { ok: true, chatId: chat.chatId };
+  });
+
+  ipcMain.handle('agent:forget', async (event, { profileId }) => {
+    if (profileId && memory[profileId]) { delete memory[profileId]; saveMemory(); }
+    return { ok: true };
   });
 
   ipcMain.handle('agent:prompt', async (event, { chatId, text: prompt }) => {
@@ -373,9 +432,9 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     return { ok: true };
   });
 
-  ipcMain.on('agent:approval-decision', (event, { approvalId, allow }) => {
+  ipcMain.on('agent:approval-decision', (event, { approvalId, allow, always }) => {
     const r = approvals.get(approvalId);
-    if (r) { approvals.delete(approvalId); r(allow); }
+    if (r) { approvals.delete(approvalId); r(allow, always); }
   });
 
   ipcMain.on('agent:permission-decision', (event, { requestId, optionId }) => {
