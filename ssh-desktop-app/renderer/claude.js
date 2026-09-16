@@ -1,12 +1,17 @@
 "use strict";
 /* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
 const CL={detect:null,connId:null,chats:{},drafts:{},freshWanted:{},renderQueued:false,open:false,big:false};
-function clProfileId(connId){const t=clTab(connId);return t&&t.session||null;}
+const CL_LOCAL={connId:'local',local:true,name:'Этот компьютер'};
+function clTargets(){return [CL_LOCAL,...fxLiveTabs()];}
+function clIsLocal(connId){return connId===CL_LOCAL.connId;}
+function clProfileId(connId){const t=clTab(connId);return t?(t.local?'local':t.session):null;}
+function clTargetIco(t){return t.local?'<span class="cl-pk-os cl-pk-local">'+IC('terminal')+'</span>':'<span class="cl-pk-os" style="--osc:'+osOf(t.os).color+'">'+IC(osOf(t.os).icon)+'</span>';}
+function clTargetSub(t){return t.local?'этот компьютер':t.user+'@'+t.host+(String(t.port)!=='22'?':'+t.port:'');}
 const CL_TOOL_LABELS={run_command:'Команда',read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',edit_file:'Правка файла'};
 function clShortTool(name){const m=/^mcp__ssh__(.+)$/.exec(name||'');return m?m[1]:(name||'');}
 function clChatById(chatId){return Object.values(CL.chats).find(c=>c.chatId===chatId)||null;}
-function clTab(connId){return fxLiveTabs().find(t=>t.connId===connId)||null;}
-function clTarget(chat){const t=chat&&clTab(chat.connId);return t?t.name+' · '+t.user+'@'+t.host+':'+t.port:'';}
+function clTab(connId){return clTargets().find(t=>t.connId===connId)||null;}
+function clTarget(chat){const t=chat&&clTab(chat.connId);return t?(t.local?t.name:t.name+' · '+t.user+'@'+t.host+':'+t.port):'';}
 function clPending(){return Object.values(CL.chats).reduce((n,c)=>n+c.items.filter(i=>((i.kind==='approval'||i.kind==='permission')&&i.state==='pending')||(i.approval&&i.approval.state==='pending')).length,0);}
 function clMd(src){
   // Minimal, escape-first formatting: ``` fences, `code`, **bold**, line breaks.
@@ -99,27 +104,32 @@ function clSyncSend(){
   b.disabled=mode==='wait'||(mode==='send'&&!ta.value.trim());
 }
 function clGrow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';}
-function renderClPicker(tabs){
+function renderClPicker(targets){
   const b=$('#clPicker');if(!b)return;
-  const t=tabs.find(x=>x.connId===CL.connId);
-  b.classList.toggle('single',tabs.length<2);
-  if(!t){b.innerHTML='<span class="cl-pk-sub">нет подключений</span>';b.disabled=true;closeClMenu();return;}
-  const o=osOf(t.os);
+  const t=targets.find(x=>x.connId===CL.connId);
+  b.classList.toggle('single',false);
+  if(!t){b.innerHTML='<span class="cl-pk-sub">нет цели</span>';b.disabled=true;closeClMenu();return;}
   b.disabled=false;
-  b.innerHTML='<span class="cl-pk-os" style="--osc:'+o.color+'">'+IC(o.icon)+'</span><span class="cl-pk-t">'+esc(t.name)+'</span>'+
-    '<span class="cl-pk-sub">'+esc(t.user+'@'+t.host)+'</span>'+(tabs.length>1?IC('chev-down','cl-pk-chev'):'');
-  b.title=tabs.length>1?'Сменить сервер, на котором работает Claude':'Claude работает на этом сервере';
+  b.innerHTML=clTargetIco(t)+'<span class="cl-pk-t">'+esc(t.name)+'</span>'+
+    '<span class="cl-pk-sub">'+esc(clTargetSub(t))+'</span>'+IC('chev-down','cl-pk-chev');
+  b.title='Выбрать, где работает Claude';
 }
 function openClMenu(){
-  const tabs=fxLiveTabs();if(tabs.length<2)return;
-  $('#clMenu').innerHTML='<div class="cl-menu-h">Сервер для Claude</div>'+tabs.map(t=>{
-    const o=osOf(t.os),c=CL.chats[t.connId],on=t.connId===CL.connId;
+  const row=(t)=>{
+    const c=CL.chats[t.connId],on=t.connId===CL.connId;
     const st=c&&c.state!=='closed'?(c.busy?'<span class="cl-mi-st busy">отвечает</span>':'<span class="cl-mi-st">есть чат</span>'):'';
-    return '<button class="cl-mi'+(on?' on':'')+'" data-conn="'+t.connId+'">'+
-      '<span class="cl-pk-os" style="--osc:'+o.color+'">'+IC(o.icon)+'</span>'+
-      '<span class="cl-mi-t"><b>'+esc(t.name)+'</b><small>'+esc(t.user+'@'+t.host+(String(t.port)!=='22'?':'+t.port:''))+' · '+esc(osLabel(t.os,t.osName))+'</small></span>'+
+    return '<button class="cl-mi'+(on?' on':'')+'" data-conn="'+t.connId+'">'+clTargetIco(t)+
+      '<span class="cl-mi-t"><b>'+esc(t.name)+'</b><small>'+esc(t.local?clTargetSub(t):clTargetSub(t)+' · '+osLabel(t.os,t.osName))+'</small></span>'+
       st+'<span class="cl-mi-ck">'+(on?IC('check'):'')+'</span></button>';
-  }).join('');
+  };
+  const liveIds=new Set(S.tabs.filter(t=>!t.local&&!t.closed).map(t=>t.session));
+  const offline=S.sessions.filter(s=>!liveIds.has(s.id)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,8);
+  $('#clMenu').innerHTML='<div class="cl-menu-h">Где работает Claude</div>'+clTargets().map(row).join('')+
+    (offline.length?'<div class="cl-menu-h">Подключиться</div>'+offline.map(s=>
+      '<button class="cl-mi" data-do="connect" data-arg="'+s.id+'">'+
+        '<span class="cl-pk-os" style="--osc:'+osOf(s.os).color+'">'+IC(osOf(s.os).icon)+'</span>'+
+        '<span class="cl-mi-t"><b>'+esc(s.name)+'</b><small>'+esc(s.user+'@'+s.host+(String(s.port)!=='22'?':'+s.port:''))+'</small></span>'+
+        '<span class="cl-mi-ck">'+IC('play')+'</span></button>').join(''):'');
   $('#clMenu').hidden=false;
   $('#clPicker').classList.add('open');
 }
@@ -133,29 +143,15 @@ function clStatusHtml(chat){
 }
 function renderClaude(){
   const box=$('#clBody');if(!box)return;
-  const tabs=fxLiveTabs();
-  if(CL.connId&&!tabs.some(t=>t.connId===CL.connId))CL.connId=null;
-  if(!CL.connId&&tabs.length)CL.connId=tabs[0].connId;
-  renderClPicker(tabs);
+  const tabs=fxLiveTabs(),targets=clTargets();
+  if(CL.connId&&!targets.some(t=>t.connId===CL.connId))CL.connId=null;
+  if(!CL.connId)CL.connId=tabs.length?tabs[0].connId:CL_LOCAL.connId;
+  renderClPicker(targets);
   const d=CL.detect;
   if(d&&!d.found){
     box.innerHTML='<div class="empty cl-none"><div class="empty-ico">'+IC('alert')+'</div><h4>Claude Code не найден</h4><p>'+esc(d.error||'')+'</p>'+
       '<button class="btn primary" id="clRedetect">'+IC('refresh')+' Проверить снова</button></div>';
     $('#clRedetect').onclick=async()=>{CL.detect=await window.agentAPI.detect(true);renderClaude();renderClaudeSettings();};
-    return;
-  }
-  if(!tabs.length){
-    const saved=S.sessions.slice().sort((a,b)=>a.name.localeCompare(b.name));
-    box.innerHTML='<div class="empty cl-none"><div class="empty-ico cl-logo-ico">'+IC('claude')+'</div><h4>Нет активных SSH-подключений</h4>'+
-      '<p>Claude работает на сервере подключённой сессии'+(saved.length?' — выберите, куда подключиться':'. Подключитесь — и можно начинать')+'.</p>'+
-      (saved.length?'<div class="cl-connect">'+saved.slice(0,7).map(s=>{
-        const o=osOf(s.os);
-        return '<button class="cl-mi" data-do="connect" data-arg="'+s.id+'">'+
-          '<span class="cl-pk-os" style="--osc:'+o.color+'">'+IC(o.icon)+'</span>'+
-          '<span class="cl-mi-t"><b>'+esc(s.name)+'</b><small>'+esc(s.user+'@'+s.host+(String(s.port)!=='22'?':'+s.port:''))+'</small></span>'+
-          '<span class="cl-mi-ck">'+IC('play')+'</span></button>';
-      }).join('')+'</div>':'')+
-      '<button class="btn '+(saved.length?'ghost':'primary')+'" data-do="go" data-arg="sessions">'+IC('sessions')+' К списку сессий</button></div>';
     return;
   }
   const chat=CL.chats[CL.connId];
@@ -165,7 +161,7 @@ function renderClaude(){
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-compose"><div class="cl-box">'+
-      '<textarea id="clText" rows="1" placeholder="Спросите Claude о сервере…" spellcheck="false"></textarea>'+
+      '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
       '<button class="cl-send" id="clSend"></button></div>'+
       '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span></div>'+
     '</div>'+
@@ -327,6 +323,7 @@ $('#clFab').onclick=()=>CL.open?closeClaude():openClaude();
 $('#clMin').onclick=closeClaude;
 $('#clPicker').onclick=()=>{$('#clMenu').hidden?openClMenu():closeClMenu();};
 $('#clMenu').onclick=e=>{
+  if(e.target.closest('[data-do]')){closeClMenu();return;}
   const b=e.target.closest('[data-conn]');if(!b)return;
   closeClMenu();
   if(b.dataset.conn!==CL.connId){CL.connId=b.dataset.conn;renderClaude();}

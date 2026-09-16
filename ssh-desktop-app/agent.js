@@ -16,6 +16,15 @@ const READ_LIMIT = 256 * 1024;
 const OUTPUT_LIMIT = 30000;
 const LOCAL_TOOLS_OFF = ['Bash', 'BashOutput', 'KillShell', 'KillBash', 'Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS'];
 
+const LOCAL_ID = 'local';
+
+const SYSTEM_APPEND_LOCAL = [
+  'You are running inside an SSH client, but this chat targets the local computer it runs on, not a remote server.',
+  "Claude Code's own local tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.",
+  'Paths are paths on this computer; relative paths resolve against the working directory shown above. Every run_command, write_file and edit_file call is shown to the user for approval, so keep commands focused and explain briefly why you run them.',
+  'Prefer non-interactive commands. Reply in the language the user writes in.',
+].join('\n');
+
 const SYSTEM_APPEND = [
   'You are running inside an SSH client and operate on a remote server over SSH, not on the local computer.',
   'Local file and shell tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.',
@@ -97,6 +106,12 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     return m;
   }
 
+  function workspaceDir() {
+    const d = path.join(app.getPath('userData'), 'claude-workspace');
+    fs.mkdirSync(d, { recursive: true });
+    return d;
+  }
+
   /* ---- approvals for remote actions ---- */
   function askApproval(chat, tool, summary, detail) {
     if (chat.autoApprove.has(tool)) return Promise.resolve(true);
@@ -126,6 +141,62 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       if (p.chatId === chat.chatId) { permissions.delete(id); p.resolve(null); }
     }
   }
+
+  // The local target runs commands through a shell on this computer instead of over SSH.
+  function localShell() {
+    if (process.platform !== 'win32') return { file: '/bin/sh', pre: ['-c'] };
+    for (const exe of ['pwsh.exe', 'powershell.exe']) {
+      try { execFileSync('where.exe', [exe], { stdio: 'ignore', windowsHide: true, timeout: 5000 }); return { file: exe, pre: ['-NoProfile', '-NonInteractive', '-Command'] }; } catch (_) {}
+    }
+    return { file: 'cmd.exe', pre: ['/d', '/s', '/c'] };
+  }
+  function execLocal(command, cwd, timeoutMs) {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const sh = localShell();
+      const child = spawn(sh.file, [...sh.pre, command], { cwd: cwd || workspaceDir(), windowsHide: true });
+      let out = '';
+      let timedOut = false;
+      const add = (d) => { if (out.length < OUTPUT_LIMIT * 4) out += d.toString('utf8'); };
+      child.stdout.on('data', add);
+      child.stderr.on('data', add);
+      const timer = setTimeout(() => { timedOut = true; try { child.kill(); } catch (_) {} }, timeoutMs);
+      child.on('error', (e) => { clearTimeout(timer); resolve({ output: 'Не удалось запустить оболочку: ' + e.message, code: null, signal: null, timedOut, ms: Date.now() - started }); });
+      child.on('close', (code, signal) => { clearTimeout(timer); resolve({ output: out, code, signal, timedOut, ms: Date.now() - started }); });
+    });
+  }
+  function localRead(p, limit) {
+    const target = localResolve(p);
+    const size = fs.statSync(target).size;
+    const len = Math.min(size, limit);
+    const fd = fs.openSync(target, 'r');
+    try {
+      const data = Buffer.alloc(len);
+      fs.readSync(fd, data, 0, len, 0);
+      return { data, size, truncated: size > len };
+    } finally { fs.closeSync(fd); }
+  }
+  function localList(p) {
+    const target = localResolve(p || '.');
+    const entries = fs.readdirSync(target, { withFileTypes: true }).map((e) => {
+      let size = 0;
+      let mode = 0;
+      try { const st = fs.statSync(path.join(target, e.name)); size = st.size; mode = st.mode & 0o777; } catch (_) {}
+      return { name: e.name, dir: e.isDirectory(), size, perms: (e.isDirectory() ? 'd' : '-') + mode.toString(8).padStart(3, '0') };
+    });
+    return { path: target, entries };
+  }
+  function localWrite(p, content) {
+    const target = localResolve(p);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf8');
+  }
+
+  const localResolve = (p) => {
+    let t = String(p);
+    if (t === '~' || t.startsWith('~/') || t.startsWith('~\\')) t = path.join(app.getPath('home'), t.slice(1));
+    return path.resolve(workspaceDir(), t);
+  };
 
   function execRemote(connId, command, timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -157,6 +228,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
     const z = require('zod');
     const server = new McpServer({ name: 'ssh-client', version: '1.0.0' });
+    const where = chat.local ? 'on this computer' : 'on the remote server';
     const conn = () => chat.connId;
     // SFTP does not expand ~, the shell does: resolve it against the SFTP home directory.
     const remotePath = async (p) => {
@@ -168,10 +240,10 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     };
 
     server.registerTool('run_command', {
-      description: 'Run a shell command on the remote server over SSH (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.',
+      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.',
       inputSchema: {
         command: z.string().describe('Shell command to run'),
-        cwd: z.string().optional().describe('Remote working directory'),
+        cwd: z.string().optional().describe(chat.local ? 'Working directory on this computer' : 'Remote working directory'),
         timeout_seconds: z.number().int().min(1).max(900).optional().describe('Kill the command after this many seconds (default 120)'),
       },
     }, ({ command, cwd, timeout_seconds }) => guard(async () => {
@@ -179,48 +251,49 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       const full = cwd ? 'cd ' + cdTarget + ' && ' + command : command;
       const ok = await askApproval(chat, 'run_command', command, cwd ? 'в папке ' + cwd : '');
       if (!ok) return text('Пользователь отклонил выполнение команды.', true);
-      const r = await execRemote(conn(), full, (timeout_seconds || 120) * 1000);
+      const limit = (timeout_seconds || 120) * 1000;
+      const r = chat.local ? await execLocal(command, cwd ? localResolve(cwd) : null, limit) : await execRemote(conn(), full, limit);
       const status = r.timedOut ? 'timed out after ' + (timeout_seconds || 120) + 's' : 'exit code ' + (r.code === null ? '?' : r.code) + (r.signal ? ', signal ' + r.signal : '');
       sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: status });
       return text('[' + status + ', ' + r.ms + ' ms]\n' + clip(r.output, OUTPUT_LIMIT), r.timedOut || (r.code !== 0 && r.code !== null));
     }));
 
     server.registerTool('read_file', {
-      description: 'Read a text file on the remote server (up to 256 KB).',
-      inputSchema: { path: z.string().describe('Absolute or home-relative remote path') },
+      description: 'Read a text file ' + where + ' (up to 256 KB).',
+      inputSchema: { path: z.string().describe(chat.local ? 'Absolute path, or relative to the working directory' : 'Absolute or home-relative remote path') },
     }, ({ path: file }) => guard(async () => {
-      const r = await sftp.readText(conn(), await remotePath(file), READ_LIMIT);
+      const r = chat.local ? localRead(file, READ_LIMIT) : await sftp.readText(conn(), await remotePath(file), READ_LIMIT);
       if (r.data.includes(0)) return text('Файл двоичный — прочитать как текст нельзя (' + r.size + ' байт).', true);
       return text((r.truncated ? '[показаны первые ' + r.data.length + ' из ' + r.size + ' байт]\n' : '') + r.data.toString('utf8'));
     }));
 
     server.registerTool('list_directory', {
-      description: 'List a directory on the remote server.',
+      description: 'List a directory ' + where + '.',
       inputSchema: { path: z.string().optional().describe('Remote directory (default: home)') },
     }, ({ path: dir }) => guard(async () => {
-      const r = await sftp.listDir(conn(), dir ? await remotePath(dir) : '.');
+      const r = chat.local ? localList(dir) : await sftp.listDir(conn(), dir ? await remotePath(dir) : '.');
       const lines = r.entries.sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name))
         .map((e) => e.perms + ' ' + String(e.dir ? '-' : e.size).padStart(10) + ' ' + e.name + (e.dir ? '/' : ''));
       return text(r.path + '\n' + lines.join('\n'));
     }));
 
     server.registerTool('write_file', {
-      description: 'Create or overwrite a text file on the remote server. The user approves every call.',
+      description: 'Create or overwrite a text file ' + where + '. The user approves every call.',
       inputSchema: { path: z.string(), content: z.string() },
     }, ({ path: file, content }) => guard(async () => {
       const ok = await askApproval(chat, 'write_file', file, clip(content, 4000));
       if (!ok) return text('Пользователь отклонил запись файла.', true);
-      await sftp.writeText(conn(), await remotePath(file), content);
+      if (chat.local) localWrite(file, content); else await sftp.writeText(conn(), await remotePath(file), content);
       sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'write_file', summary: file, result: Buffer.byteLength(content) + ' байт' });
       return text('Записано ' + Buffer.byteLength(content) + ' байт в ' + file);
     }));
 
     server.registerTool('edit_file', {
-      description: 'Replace an exact text fragment in a remote file. old_string must occur exactly once unless replace_all is true. The user approves every call.',
+      description: 'Replace an exact text fragment in a file ' + where + '. old_string must occur exactly once unless replace_all is true. The user approves every call.',
       inputSchema: { path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() },
     }, ({ path: file, old_string, new_string, replace_all }) => guard(async () => {
-      const target = await remotePath(file);
-      const r = await sftp.readText(conn(), target, 4 * 1024 * 1024);
+      const target = chat.local ? file : await remotePath(file);
+      const r = chat.local ? localRead(file, 4 * 1024 * 1024) : await sftp.readText(conn(), target, 4 * 1024 * 1024);
       if (r.truncated) return text('Файл больше 4 МБ — правка не поддерживается.', true);
       const src = r.data.toString('utf8');
       const count = old_string ? src.split(old_string).length - 1 : 0;
@@ -229,7 +302,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       const ok = await askApproval(chat, 'edit_file', file, '— ' + clip(old_string, 1800) + '\n+ ' + clip(new_string, 1800) + (count > 1 ? '\n(замен: ' + count + ')' : ''));
       if (!ok) return text('Пользователь отклонил правку файла.', true);
       const next = replace_all ? src.split(old_string).join(new_string) : src.replace(old_string, () => new_string);
-      await sftp.writeText(conn(), target, next);
+      if (chat.local) localWrite(target, next); else await sftp.writeText(conn(), target, next);
       sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'edit_file', summary: file, result: 'замен: ' + (replace_all ? count : 1) });
       return text('Файл ' + file + ' изменён.');
     }));
@@ -284,8 +357,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     if (!claude.found) throw new Error(claude.error);
     await mcpReady;
     const acp = await import('@agentclientprotocol/sdk');
-    const workspace = path.join(app.getPath('userData'), 'claude-workspace');
-    fs.mkdirSync(workspace, { recursive: true });
+    const workspace = workspaceDir();
 
     const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path };
     const proc = spawn(process.execPath, [adapterEntry()], { cwd: workspace, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -331,7 +403,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       chat.acp = acp;
       await ctx.request(acp.methods.agent.initialize, { protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
       const mcpServers = [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }];
-      const sessionMeta = { systemPrompt: { append: SYSTEM_APPEND }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
+      const sessionMeta = { systemPrompt: { append: chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
       let resumed = false;
       if (chat.resumeSessionId) {
         try {
@@ -383,11 +455,12 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   ipcMain.handle('agent:detect', async (event, { force } = {}) => detectClaude(!!force));
 
   ipcMain.handle('agent:start', async (event, { connId, profileId, fresh }) => {
-    if (!getConnection(connId)) return { ok: false, error: 'SSH-сессия не подключена' };
+    const isLocal = connId === LOCAL_ID;
+    if (!isLocal && !getConnection(connId)) return { ok: false, error: 'SSH-сессия не подключена' };
     for (const c of chats.values()) if (c.connId === connId) closeChat(c, 'Начат новый чат');
     const m = memFor(profileId);
     const chat = {
-      chatId: crypto.randomUUID(), connId, profileId: profileId || null,
+      chatId: crypto.randomUUID(), connId, profileId: profileId || null, local: isLocal,
       token: crypto.randomBytes(32).toString('hex'), state: 'starting', busy: false,
       pendingApprovals: new Set(),
       // "Always allow" decisions survive a deliberate new chat; conversation memory does not.

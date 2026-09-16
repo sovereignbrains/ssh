@@ -616,10 +616,8 @@ html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 .cl-pop-t b{font-size:14px}
 .cl-pop-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
 .cl-none{margin:auto;padding:26px 22px}
-.cl-connect{display:flex;flex-direction:column;gap:4px;width:100%;max-width:330px;margin:2px 0 4px}
-.cl-connect .cl-mi{border:1px solid transparent}
-.cl-connect .cl-mi:hover{border-color:var(--line-2)}
-.cl-connect .cl-mi-ck{color:var(--ok)}
+.cl-pk-local{background:var(--claude-soft);color:var(--claude)}
+.cl-menu .cl-mi[data-do="connect"] .cl-mi-ck{color:var(--ok)}
 .cl-msg.agent{background:var(--glass-soft);border-color:var(--glass-line)}
 .cl-card{background:#ffffff07;border-color:var(--glass-line)}
 .cl-empty{padding:0 10px}
