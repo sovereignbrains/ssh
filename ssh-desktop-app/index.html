@@ -12,6 +12,15 @@
 <body>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="ic-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 .5A11.5 11.5 0 0 0 8.4 23c.6.1.8-.25.8-.56v-2.1c-3.2.7-3.87-1.4-3.87-1.4-.53-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.09 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.56-.29-5.26-1.28-5.26-5.71 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.44-2.7 5.42-5.28 5.7.42.36.78 1.06.78 2.13v3.16c0 .31.21.67.81.56A11.5 11.5 0 0 0 12 .5"/></symbol>
+<symbol id="ic-branch" viewBox="0 0 24 24"><circle cx="6.4" cy="6" r="2.5"/><circle cx="6.4" cy="18.4" r="2.5"/><circle cx="17.6" cy="6" r="2.5"/><path d="M6.4 8.5v7.4"/><path d="M17.6 8.5c0 3.8-3 5.2-6.2 5.8-1.9.35-3.5 1-5 2.1"/></symbol>
+<symbol id="ic-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.3"/><path d="M3 12h5.7M15.3 12H21"/></symbol>
+<symbol id="ic-pr" viewBox="0 0 24 24"><circle cx="6.5" cy="6" r="2.4"/><circle cx="6.5" cy="18.4" r="2.4"/><circle cx="17.5" cy="18.4" r="2.4"/><path d="M6.5 8.4v7.6"/><path d="M17.5 16V9.6a2.8 2.8 0 0 0-2.8-2.8h-3"/><path d="m13.6 4.4-2.2 2.4 2.2 2.4"/></symbol>
+<symbol id="ic-issue" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="2.7"/></symbol>
+<symbol id="ic-zap" viewBox="0 0 24 24"><path d="M13.6 2.4 4.8 13.2h6L9.9 21.6l9-11.2h-6.2z"/></symbol>
+<symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4.8 6.6h14.4"/><path d="M9.4 6.6V4.9a1.4 1.4 0 0 1 1.4-1.4h2.4a1.4 1.4 0 0 1 1.4 1.4v1.7"/><path d="M6.7 6.6 7.6 19a1.6 1.6 0 0 0 1.6 1.5h5.6a1.6 1.6 0 0 0 1.6-1.5l.9-12.4"/><path d="M10.4 10.5v6M13.6 10.5v6"/></symbol>
+<symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.4"/><path d="m15.8 15.8 4.6 4.6"/></symbol>
+<symbol id="ic-external" viewBox="0 0 24 24"><path d="M14.2 4.4h5.4v5.4"/><path d="M19.6 4.4 11.6 12.4"/><path d="M18 13.6v5a2 2 0 0 1-2 2H5.6a2 2 0 0 1-2-2V8.2a2 2 0 0 1 2-2h5"/></symbol>
 <symbol id="ic-unlock" viewBox="0 0 24 24"><rect x="4" y="10.4" width="16" height="10.2" rx="2.6"/><path d="M8 10.4V7.5a4 4 0 0 1 7.7-1.4"/><path d="M12 14.4v2.4"/></symbol>
 <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="4" y="10.4" width="16" height="10.2" rx="2.6"/><path d="M8 10.4V7.5a4 4 0 0 1 8 0v2.9"/><path d="M12 14.4v2.4"/></symbol>
 <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -133,6 +142,10 @@
           </div>
           <div class="local-strip" id="localStrip" hidden></div>
           <div id="sessionsBox"></div>
+        </section>
+
+        <section class="view paged" data-view="projects">
+          <div class="page" id="pjPage"></div>
         </section>
 
         <section class="view paged" data-view="keys">
@@ -414,6 +427,7 @@
     </main>
     <nav class="dock" id="dock" aria-label="Разделы">
       <button class="nav-item active" data-view="sessions" title="Сессии (Alt+1 — Главная)"><span class="ni"><svg class="ic"><use href="#ic-sessions"/></svg><span class="badge ok" id="bgSessions" title="Активных сессий">0</span></span><span class="nl">Сессии</span></button>
+      <button class="nav-item" data-view="projects" title="Проекты"><span class="ni"><svg class="ic"><use href="#ic-github"/></svg><span class="badge" id="bgProjects" title="Проектов с несохранёнными изменениями">0</span></span><span class="nl">Проекты</span></button>
       <button class="nav-item" data-view="keys" title="Ключи"><span class="ni"><svg class="ic"><use href="#ic-key"/></svg></span><span class="nl">Ключи</span></button>
       <button class="nav-item" data-view="tunnels" title="Пробросы портов"><span class="ni"><svg class="ic"><use href="#ic-tunnels"/></svg><span class="badge ok" id="bgTunnels" title="Работающих пробросов">0</span></span><span class="nl">Пробросы</span></button>
       <button class="nav-item" data-view="journal" title="Журнал"><span class="ni"><svg class="ic"><use href="#ic-activity"/></svg><span class="badge" id="bgJournal" title="Сбоев в журнале">0</span></span><span class="nl">Журнал</span></button>
@@ -513,6 +527,7 @@
 <script src="renderer/tabs.js"></script>
 <script src="renderer/files.js"></script>
 <script src="renderer/claude.js"></script>
+<script src="renderer/projects.js"></script>
 <script src="renderer/keys.js"></script>
 <script src="renderer/tunnels.js"></script>
 <script src="renderer/journal.js"></script>

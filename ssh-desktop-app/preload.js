@@ -146,3 +146,17 @@ contextBridge.exposeInMainWorld('keysAPI', {
   savePublic: (name, publicKey) => ipcRenderer.invoke('keys:save-public', { name, publicKey }),
   install: (connId, publicKey) => ipcRenderer.invoke('keys:install', { connId, publicKey }),
 });
+
+contextBridge.exposeInMainWorld('githubAPI', {
+  user: (token) => ipcRenderer.invoke('github:user', { token }),
+  repos: (token) => ipcRenderer.invoke('github:repos', { token }),
+  issues: (token, repo, state) => ipcRenderer.invoke('github:issues', { token, repo, state }),
+  pulls: (token, repo, state) => ipcRenderer.invoke('github:pulls', { token, repo, state }),
+  runs: (token, repo) => ipcRenderer.invoke('github:runs', { token, repo }),
+  createIssue: (token, repo, title, body) => ipcRenderer.invoke('github:create-issue', { token, repo, title, body }),
+  open: (url) => ipcRenderer.invoke('github:open', { url }),
+  git: (params) => ipcRenderer.invoke('git:op', params),
+  pickDir: (current) => ipcRenderer.invoke('git:pick-dir', { current }),
+  home: () => ipcRenderer.invoke('git:home'),
+  reveal: (dir) => ipcRenderer.invoke('git:reveal', { dir }),
+});

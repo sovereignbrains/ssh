@@ -4,7 +4,7 @@
    stamp(): turns a plain snapshot into a versioned one (updatedAt per record, tombstones for deletions).
    merge(): combines two versioned snapshots record by record — the newer change wins, nothing is lost silently. */
 (function(root){
-  const COLLECTIONS=['sessions','keys','tunnels'];
+  const COLLECTIONS=['sessions','keys','tunnels','projects'];
   const TOMBSTONE_TTL=90*24*3600*1000;
   const JOURNAL_MAX=2000;
 
@@ -93,7 +93,7 @@
 
   // «+1 сессия, изменено 2, удалён 1 ключ»
   function describe(stats){
-    const words={sessions:['сессия','сессии','сессий'],keys:['ключ','ключа','ключей'],tunnels:['проброс','проброса','пробросов']};
+    const words={sessions:['сессия','сессии','сессий'],keys:['ключ','ключа','ключей'],tunnels:['проброс','проброса','пробросов'],projects:['проект','проекта','проектов']};
     const plural=(n,f)=>f[(n%10===1&&n%100!==11)?0:(n%10>=2&&n%10<=4&&(n%100<10||n%100>=20))?1:2];
     const parts=[];
     for(const c of COLLECTIONS){

@@ -3,7 +3,7 @@
 const JOURNAL_MAX=2000;
 const journalQueue=[]; // events that happen while the vault is locked, merged on unlock
 let errorEntries=[],journalTab='sessions';
-const JTYPES={claude:'Claude',sftp:'SFTP',connect:'Подключение',disconnect:'Отключение',hostkey:'Ключ хоста',key:'Ключи',tunnel:'Проброс',local:'Локальный shell',vault:'Сейф'};
+const JTYPES={claude:'Claude',sftp:'SFTP',connect:'Подключение',disconnect:'Отключение',hostkey:'Ключ хоста',key:'Ключи',tunnel:'Проброс',local:'Локальный shell',vault:'Сейф',project:'Проект'};
 const JLEVELS={ok:['on','успех'],info:['off','инфо'],warn:['warn','внимание'],err:['err','ошибка']};
 const sessTarget=s=>s?s.name+' · '+s.user+'@'+s.host+':'+s.port:'';
 const tunnelTarget=t=>'127.0.0.1:'+t.lport+' → '+t.host+':'+t.rport;

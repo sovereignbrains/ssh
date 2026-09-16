@@ -100,7 +100,7 @@ async function startLocalPty(tab){
   fitXterm(tab.id);
   tab.ptyId=uid('p');tab.exited=false;tab.exitCode=null;
   ptyToTab[tab.ptyId]=tab;
-  const r=await window.localAPI.spawn({ptyId:tab.ptyId,shell:tab.shell,cwd:S.shellDir,cols:st.term.cols,rows:st.term.rows});
+  const r=await window.localAPI.spawn({ptyId:tab.ptyId,shell:tab.shell,cwd:tab.dir||S.shellDir,cols:st.term.cols,rows:st.term.rows});
   if(!r.ok){
     delete ptyToTab[tab.ptyId];
     tab.exited=true;
@@ -115,11 +115,12 @@ async function startLocalPty(tab){
   refreshTab(tab);
   return true;
 }
-async function localShell(shell){
+// opts: {dir} — стартовая папка (для проектов), {name} — имя вкладки.
+async function localShell(shell,opts){
   if(!S.vaultOpen){toast('Сейф заблокирован','err','Отказано');lockScreenFocus();return;}
   if(!window.localAPI){toast('Локальный shell недоступен в этой сборке','err','Локальный shell');return;}
-  shell=shell||S.shell;
-  const tab={id:uid('t'),local:true,shell:shell,name:SHELL_NAMES[shell]||shell,session:null};
+  shell=shell||S.shell;opts=opts||{};
+  const tab={id:uid('t'),local:true,shell:shell,name:opts.name||SHELL_NAMES[shell]||shell,session:null,dir:opts.dir||''};
   S.tabs.push(tab);
   addTermGroup(tab);
   await startLocalPty(tab);

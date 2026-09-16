@@ -9,6 +9,7 @@ const registerSftp = require('./sftp');
 const registerAgent = require('./agent');
 const registerUpdater = require('./updater');
 const registerSync = require('./sync');
+const registerGithub = require('./github');
 let syncService = null;
 const pty = require('node-pty');
 const { execFileSync } = require('child_process');
@@ -1013,6 +1014,11 @@ app.whenReady().then(() => {
     ipcMain, app, shell, safeStorage, sendToRenderer, logError, saveConfig,
     getConfig: () => config,
     getVault: () => vault,
+    getWindow: () => mainWindow,
+  });
+  registerGithub({
+    ipcMain, app, shell, dialog, logError,
+    getConnection: (connId) => connections.get(connId),
     getWindow: () => mainWindow,
   });
   registerUpdater({
