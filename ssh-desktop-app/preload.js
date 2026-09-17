@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('agentAPI', {
   detect: (force) => ipcRenderer.invoke('agent:detect', { force }),
   start: (connId, profileId, fresh) => ipcRenderer.invoke('agent:start', { connId, profileId, fresh }),
   forget: (profileId) => ipcRenderer.invoke('agent:forget', { profileId }),
+  loadTranscript: (profileId) => ipcRenderer.invoke('agent:load-transcript', { profileId }),
+  saveTranscript: (profileId, items) => ipcRenderer.invoke('agent:save-transcript', { profileId, items }),
   prompt: (chatId, content) => ipcRenderer.invoke('agent:prompt', { chatId, content }),
   cancel: (chatId) => ipcRenderer.invoke('agent:cancel', { chatId }),
   close: (chatId) => ipcRenderer.invoke('agent:close', { chatId }),

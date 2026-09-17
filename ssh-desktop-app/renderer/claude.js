@@ -1,24 +1,61 @@
 "use strict";
 /* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
-const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},renderQueued:false,open:false,big:false};
+const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},loaded:{},renderQueued:false,open:false,big:false};
+let clPersistTimer=null;
+function clPersistItem(it){
+  // dataUrl is derived from data+mimeType — drop it before saving to halve image storage.
+  if(it.attachments&&it.attachments.length)return {...it,attachments:it.attachments.map(a=>({id:a.id,mimeType:a.mimeType,data:a.data}))};
+  return it;
+}
+function clSchedulePersist(){
+  if(clPersistTimer)return;
+  clPersistTimer=setTimeout(()=>{
+    clPersistTimer=null;
+    for(const chat of Object.values(CL.chats)){
+      const pid=clProfileId(chat.connId);
+      if(pid)window.agentAPI.saveTranscript(pid,(chat.items||[]).map(clPersistItem));
+    }
+  },900);
+}
+function clHydrate(connId){
+  if(CL.loaded[connId]||CL.chats[connId]||CL.freshWanted[connId])return;
+  CL.loaded[connId]=true;
+  const pid=clProfileId(connId);
+  if(!pid||!window.agentAPI)return;
+  window.agentAPI.loadTranscript(pid).then(r=>{
+    if(!r||!r.ok||!r.items||!r.items.length||CL.chats[connId])return;
+    const items=r.items.map(it=>{
+      if(it.attachments&&it.attachments.length)it={...it,attachments:it.attachments.map(a=>({...a,dataUrl:'data:'+a.mimeType+';base64,'+a.data}))};
+      if((it.kind==='approval'||it.kind==='permission')&&it.state==='pending')it={...it,state:'expired'};
+      if(it.approval&&it.approval.state==='pending')it={...it,approval:{...it.approval,state:'expired'}};
+      return it;
+    });
+    CL.chats[connId]={connId,state:'closed',busy:false,items};
+    if(CL.open)renderClaude();
+  });
+}
 const CL_MAX_IMG=8,CL_MAX_DIM=1568;
 function clAttachList(connId){connId=connId||CL.connId;return CL.attach[connId]||(CL.attach[connId]=[]);}
 function clReadImageFile(file){
   return new Promise((resolve,reject)=>{
-    const url=URL.createObjectURL(file);
-    const img=new Image();
-    img.onload=()=>{
-      URL.revokeObjectURL(url);
-      const scale=Math.min(1,CL_MAX_DIM/Math.max(img.naturalWidth,img.naturalHeight));
-      const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
-      const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-      canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const mime=scale<1||file.type!=='image/png'?'image/jpeg':'image/png';
-      const dataUrl=canvas.toDataURL(mime,0.88);
-      resolve({id:uid('att'),mimeType:mime,dataUrl,data:dataUrl.slice(dataUrl.indexOf(',')+1)});
+    // CSP is img-src 'self' data: (no blob:) — read as a data: URL directly, not via createObjectURL.
+    const fr=new FileReader();
+    fr.onerror=()=>reject(fr.error||new Error('read failed'));
+    fr.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const scale=Math.min(1,CL_MAX_DIM/Math.max(img.naturalWidth,img.naturalHeight));
+        const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+        const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        const mime=scale<1||file.type!=='image/png'?'image/jpeg':'image/png';
+        const dataUrl=canvas.toDataURL(mime,0.88);
+        resolve({id:uid('att'),mimeType:mime,dataUrl,data:dataUrl.slice(dataUrl.indexOf(',')+1)});
+      };
+      img.onerror=()=>reject(new Error('bad image'));
+      img.src=fr.result;
     };
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('bad image'));};
-    img.src=url;
+    fr.readAsDataURL(file);
   });
 }
 async function clAddFiles(files){
@@ -69,6 +106,7 @@ function clToolText(content){
   return content.map(c=>c&&c.type==='content'&&c.content&&c.content.type==='text'?c.content.text:(c&&c.type==='diff'?('--- '+(c.path||'')+'\n'+(c.newText||'')):'')).filter(Boolean).join('\n');
 }
 function clQueueRender(){
+  clSchedulePersist();
   if(CL.renderQueued)return;
   CL.renderQueued=true;
   requestAnimationFrame(()=>{CL.renderQueued=false;if(CL.open)renderClaudeLog();updateClaudeBadge();});
@@ -190,6 +228,7 @@ function renderClaude(){
   const tabs=fxLiveTabs(),targets=clTargets();
   if(CL.connId&&!targets.some(t=>t.connId===CL.connId))CL.connId=null;
   if(!CL.connId)CL.connId=tabs.length?tabs[0].connId:CL_LOCAL.connId;
+  clHydrate(CL.connId);
   renderClPicker(targets);
   const d=CL.detect;
   if(d&&!d.found){
@@ -247,6 +286,7 @@ function renderClaude(){
     clSend();
   };
   $('#clNew').onclick=async()=>{
+    {const pid=clProfileId(CL.connId);if(pid)window.agentAPI.saveTranscript(pid,[]);}
     const c=CL.chats[CL.connId];
     if(c&&c.state!=='closed')await window.agentAPI.close(c.chatId);
     CL.freshWanted[CL.connId]=true;

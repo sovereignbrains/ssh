@@ -99,6 +99,20 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   function saveMemory() {
     try { fs.writeFileSync(memoryFile, JSON.stringify(memory, null, 2)); } catch (e) { logError('claude (память)', e); }
   }
+  /* ---- durable per-server chat transcript: what the user sees in the log, so a restart or
+   * update shows the past conversation instead of an empty panel. Separate from `memory` above,
+   * which is what Claude itself resumes from (session id) — this is only for display. */
+  const HISTORY_CAP = 200;
+  const historyFile = path.join(app.getPath('userData'), 'claude-history.json');
+  let history = {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) history = parsed;
+  } catch (_) {}
+  function saveHistory() {
+    try { fs.writeFileSync(historyFile, JSON.stringify(history)); } catch (e) { logError('claude (история)', e); }
+  }
+
   function memFor(profileId) {
     if (!profileId) return null;
     const m = memory[profileId] || (memory[profileId] = {});
@@ -476,6 +490,18 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
 
   ipcMain.handle('agent:forget', async (event, { profileId }) => {
     if (profileId && memory[profileId]) { delete memory[profileId]; saveMemory(); }
+    if (profileId && history[profileId]) { delete history[profileId]; saveHistory(); }
+    return { ok: true };
+  });
+
+  ipcMain.handle('agent:load-transcript', async (event, { profileId }) => {
+    return { ok: true, items: (profileId && history[profileId]) || [] };
+  });
+
+  ipcMain.handle('agent:save-transcript', async (event, { profileId, items }) => {
+    if (!profileId) return { ok: false };
+    if (!Array.isArray(items) || !items.length) delete history[profileId]; else history[profileId] = items.slice(-HISTORY_CAP);
+    saveHistory();
     return { ok: true };
   });
 
