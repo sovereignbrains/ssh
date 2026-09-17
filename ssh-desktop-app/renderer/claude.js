@@ -1,6 +1,50 @@
 "use strict";
 /* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
-const CL={detect:null,connId:null,chats:{},drafts:{},freshWanted:{},renderQueued:false,open:false,big:false};
+const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},renderQueued:false,open:false,big:false};
+const CL_MAX_IMG=8,CL_MAX_DIM=1568;
+function clAttachList(connId){connId=connId||CL.connId;return CL.attach[connId]||(CL.attach[connId]=[]);}
+function clReadImageFile(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      const scale=Math.min(1,CL_MAX_DIM/Math.max(img.naturalWidth,img.naturalHeight));
+      const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+      const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      const mime=scale<1||file.type!=='image/png'?'image/jpeg':'image/png';
+      const dataUrl=canvas.toDataURL(mime,0.88);
+      resolve({id:uid('att'),mimeType:mime,dataUrl,data:dataUrl.slice(dataUrl.indexOf(',')+1)});
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('bad image'));};
+    img.src=url;
+  });
+}
+async function clAddFiles(files){
+  const list=clAttachList();
+  const imgs=Array.from(files).filter(f=>f&&f.type.startsWith('image/'));
+  if(!imgs.length)return;
+  const room=CL_MAX_IMG-list.length;
+  if(room<=0){toast('Не больше '+CL_MAX_IMG+' изображений в одном сообщении','warn','Claude');return;}
+  if(imgs.length>room)toast('Добавлены первые '+room+' — лимит '+CL_MAX_IMG+' изображений','warn','Claude');
+  for(const f of imgs.slice(0,room)){
+    try{list.push(await clReadImageFile(f));}catch(e){toast('Не удалось прочитать изображение','err','Claude');}
+  }
+  clRenderAttach();clSyncSend();
+}
+function clRenderAttach(){
+  const box=$('#clAttach');if(!box)return;
+  const list=clAttachList();
+  box.hidden=!list.length;
+  box.innerHTML=list.map(a=>'<span class="cl-att-chip"><img src="'+a.dataUrl+'" alt=""><button type="button" data-att="'+a.id+'" title="Убрать">'+IC('x')+'</button></span>').join('');
+}
+function clBuildContent(text,atts){
+  if(!atts.length)return text;
+  const blocks=atts.map(a=>({type:'image',data:a.data,mimeType:a.mimeType}));
+  if(text)blocks.push({type:'text',text:text});
+  return blocks;
+}
 const CL_LOCAL={connId:'local',local:true,name:'Этот компьютер'};
 function clTargets(){return [CL_LOCAL,...fxLiveTabs()];}
 function clIsLocal(connId){return connId===CL_LOCAL.connId;}
@@ -37,7 +81,7 @@ function updateClaudeBadge(){
   $('#clFab').classList.toggle('busy',busy);
 }
 function clItemHtml(it){
-  if(it.kind==='user')return '<div class="cl-msg user">'+clMd(it.text)+'</div>';
+  if(it.kind==='user')return '<div class="cl-msg user">'+(it.attachments&&it.attachments.length?'<div class="cl-msg-imgs">'+it.attachments.map(a=>'<img src="'+a.dataUrl+'" alt="">').join('')+'</div>':'')+(it.text?clMd(it.text):'')+'</div>';
   if(it.kind==='agent')return '<div class="cl-msg agent">'+clMd(it.text)+'</div>';
   if(it.kind==='thought')return '<details class="cl-thought"><summary>'+IC('sparkles')+' Размышления</summary><div>'+clMd(it.text)+'</div></details>';
   if(it.kind==='info')return '<div class="cl-info'+(it.error?' err':'')+'">'+IC(it.error?'alert':'info')+' '+esc(it.text)+'</div>';
@@ -101,7 +145,7 @@ function clSyncSend(){
     b.innerHTML=mode==='wait'?'<span class="spinner"></span>':IC(mode==='stop'?'stop':'arrow-up');
     b.title=mode==='stop'?'Остановить ответ':mode==='wait'?'Claude запускается…':'Отправить (Enter)';
   }
-  b.disabled=mode==='wait'||(mode==='send'&&!ta.value.trim());
+  b.disabled=mode==='wait'||(mode==='send'&&!ta.value.trim()&&!clAttachList().length);
 }
 function clGrow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';}
 function renderClPicker(targets){
@@ -160,18 +204,43 @@ function renderClaude(){
       '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
-    '<div class="cl-compose"><div class="cl-box">'+
+    '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
+      '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
       '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
+      '<input type="file" id="clFile" accept="image/*" multiple hidden>'+
       '<button class="cl-send" id="clSend"></button></div>'+
-      '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span></div>'+
+      '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span><span>вставьте или перетащите скриншот</span></div>'+
     '</div>'+
   '</div>';
   const ta=$('#clText');
   ta.value=CL.drafts[CL.connId]||'';
   renderClaudeLog();
   clGrow(ta);
+  clRenderAttach();
   ta.oninput=()=>{CL.drafts[CL.connId]=ta.value;clGrow(ta);clSyncSend();};
   ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();clSend();}};
+  ta.onpaste=e=>{
+    const items=e.clipboardData?Array.from(e.clipboardData.items):[];
+    const files=items.filter(it=>it.kind==='file'&&it.type.startsWith('image/')).map(it=>it.getAsFile()).filter(Boolean);
+    if(files.length){e.preventDefault();clAddFiles(files);}
+  };
+  const clBox=$('.cl-box');
+  clBox.ondragover=e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();clBox.classList.add('drag');}};
+  clBox.ondragleave=()=>clBox.classList.remove('drag');
+  clBox.ondrop=e=>{
+    e.preventDefault();clBox.classList.remove('drag');
+    const files=Array.from(e.dataTransfer.files||[]).filter(f=>f.type.startsWith('image/'));
+    if(files.length)clAddFiles(files);
+  };
+  $('#clClip').onclick=()=>$('#clFile').click();
+  $('#clFile').onchange=e=>{if(e.target.files.length)clAddFiles(e.target.files);e.target.value='';};
+  $('#clAttach').onclick=e=>{
+    const b=e.target.closest('[data-att]');if(!b)return;
+    const list=clAttachList();
+    const i=list.findIndex(a=>a.id===b.dataset.att);
+    if(i>=0)list.splice(i,1);
+    clRenderAttach();clSyncSend();
+  };
   $('#clSend').onclick=()=>{
     const c=CL.chats[CL.connId];
     if($('#clSend').dataset.mode==='stop'){if(c)window.agentAPI.cancel(c.chatId);return;}
@@ -194,6 +263,8 @@ function renderClaude(){
   };
   const log=$('#clLog');
   log.onclick=e=>{
+    const img=e.target.closest('.cl-msg-imgs img');
+    if(img){openModal({title:'Изображение',icon:'image',body:'<img src="'+img.src+'" style="max-width:100%;border-radius:10px;display:block">'});return;}
     const a=e.target.closest('[data-allow]');
     if(a){
       const card=a.closest('[data-approval]'),it=clFindItem('approvalId',card.dataset.approval);
@@ -223,26 +294,30 @@ function clFindItem(key,val){
 }
 async function clSend(){
   const ta=$('#clText');if(!ta)return;
-  const text=ta.value.trim();if(!text||!CL.connId)return;
+  const text=ta.value.trim();
+  const atts=clAttachList().slice();
+  if((!text&&!atts.length)||!CL.connId)return;
   let chat=CL.chats[CL.connId];
   if(chat&&(chat.busy||chat.state==='starting'))return;
-  ta.value='';delete CL.drafts[CL.connId];clGrow(ta);clSyncSend();
+  ta.value='';delete CL.drafts[CL.connId];clGrow(ta);
+  CL.attach[CL.connId]=[];clRenderAttach();clSyncSend();
+  const content=clBuildContent(text,atts);
   if(!chat||chat.state==='closed'){
     const fresh=!!CL.freshWanted[CL.connId];delete CL.freshWanted[CL.connId];
     const r=await window.agentAPI.start(CL.connId,clProfileId(CL.connId),fresh);
-    if(!r.ok){toast(r.error,'err','Claude');ta.value=text;CL.drafts[CL.connId]=text;clGrow(ta);clSyncSend();return;}
+    if(!r.ok){toast(r.error,'err','Claude');ta.value=text;CL.drafts[CL.connId]=text;CL.attach[CL.connId]=atts;clGrow(ta);clRenderAttach();clSyncSend();return;}
     const prev=chat?chat.items:[];
-    chat=CL.chats[CL.connId]={chatId:r.chatId,connId:CL.connId,state:'starting',busy:true,items:prev,pendingPrompt:text};
+    chat=CL.chats[CL.connId]={chatId:r.chatId,connId:CL.connId,state:'starting',busy:true,items:prev,pendingPrompt:content};
     if(fresh&&prev.length)chat.items.push({kind:'info',text:'Начат новый чат — предыдущий контекст сброшен'});
     logEvent('info','claude','Запущен Claude Code',clTarget(chat));
-    chat.items.push({kind:'user',text:text});
+    chat.items.push({kind:'user',text:text,attachments:atts});
     clQueueRender();
     return;
   }
   chat.busy=true;
-  chat.items.push({kind:'user',text:text});
+  chat.items.push({kind:'user',text:text,attachments:atts});
   clQueueRender();
-  const r=await window.agentAPI.prompt(chat.chatId,text);
+  const r=await window.agentAPI.prompt(chat.chatId,content);
   if(!r.ok){chat.busy=false;chat.items.push({kind:'info',error:true,text:r.error});clQueueRender();}
 }
 /* ---- floating chat: launcher bottom-right, panel opens above it ---- */

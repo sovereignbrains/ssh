@@ -479,12 +479,12 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     return { ok: true };
   });
 
-  ipcMain.handle('agent:prompt', async (event, { chatId, text: prompt }) => {
+  ipcMain.handle('agent:prompt', async (event, { chatId, content }) => {
     const chat = chats.get(chatId);
     if (!chat || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
     if (chat.busy) return { ok: false, error: 'Claude ещё отвечает — дождитесь или остановите' };
     chat.busy = true;
-    chat.session.prompt(prompt).catch((e) => {
+    chat.session.prompt(content).catch((e) => {
       chat.busy = false;
       sendToRenderer('agent:stop', { chatId, stopReason: 'error', error: (e && e.message) || String(e) });
     });
