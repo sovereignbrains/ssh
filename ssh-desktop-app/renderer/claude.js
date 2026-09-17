@@ -289,13 +289,17 @@ function clCfgPills(chat){
   }).join('');
 }
 // Context fill is what runs out first, so it leads; session cost rides along when the agent reports it.
+// Context fill reads like a battery gauge in the header; the session cost lives in its tooltip.
 function clUsageHtml(chat){
   const u=chat&&chat.usage;
   if(!u||!u.size)return '';
   const pct=Math.min(100,Math.round(u.used/u.size*100));
-  const cost=u.cost?' · $'+u.cost.amount.toFixed(u.cost.amount<0.01?4:2):'';
-  const title='Контекст: '+u.used.toLocaleString('ru-RU')+' из '+u.size.toLocaleString('ru-RU')+' токенов'+(u.cost?'. Стоимость сессии: $'+u.cost.amount.toFixed(4):'');
-  return '<span class="cl-usage'+(pct>=80?' hot':'')+'" title="'+esc(title)+'">'+pct+'%'+esc(cost)+'</span>';
+  const level=pct>=85?' hot':pct>=60?' warn':'';
+  const title='Контекст: '+u.used.toLocaleString('ru-RU')+' из '+u.size.toLocaleString('ru-RU')+' токенов ('+pct+'%)'+
+    (u.cost?'. Стоимость сессии: $'+u.cost.amount.toFixed(4):'');
+  return '<span class="cl-batt'+level+'" title="'+esc(title)+'">'+
+    '<span class="cl-batt-bar"><i style="width:'+Math.max(pct,3)+'%"></i></span>'+
+    '<span class="cl-batt-t">'+pct+'%</span></span>';
 }
 function clStatusHtml(chat){
   const s=!chat?['off','не запущен']:chat.state==='starting'?['warn','запуск…']:chat.state==='ready'?(chat.busy?['warn','отвечает']:['on','готов']):['off','завершён'];
@@ -318,6 +322,7 @@ function renderClaude(){
   const chat=CL.chats[CL.connId];
   box.innerHTML='<div class="cl-wrap">'+
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
+      '<span id="clUsage"></span>'+
       '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
@@ -329,7 +334,6 @@ function renderClaude(){
         '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
         '<span class="cl-config-row" id="clConfigRow"></span>'+
         '<span style="flex:1"></span>'+
-        '<span id="clUsage"></span>'+
         '<button class="cl-send" id="clSend"></button>'+
       '</div></div>'+
       '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span><span>вставьте или перетащите скриншот</span></div>'+
