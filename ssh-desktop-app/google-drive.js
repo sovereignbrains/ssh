@@ -63,6 +63,7 @@ function createDrive({ app, shell, safeStorage, logError }) {
 
   async function tokenRequest(params) {
     const cfg = oauthConfig();
+    if (!cfg) throw new DriveError('В этой сборке синхронизация с Google не настроена', 0, 'unconfigured');
     const body = new URLSearchParams({ client_id: cfg.clientId, client_secret: cfg.clientSecret, ...params });
     const r = await fetch(endpoints.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
     const j = await r.json().catch(() => ({}));
