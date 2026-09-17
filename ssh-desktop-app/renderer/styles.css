@@ -665,10 +665,10 @@ html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 
 /* composer */
 .cl-compose{padding:10px 12px 8px;border-top:1px solid var(--glass-line);background:var(--glass-soft)}
-.cl-box{display:flex;align-items:flex-end;gap:8px;padding:6px 6px 6px 8px;border-radius:16px;background:var(--field);border:1px solid var(--line-2);transition:border-color var(--tr),box-shadow var(--tr)}
+.cl-box{display:flex;flex-direction:column;align-items:stretch;padding:4px 8px 7px;border-radius:16px;background:var(--field);border:1px solid var(--line-2);transition:border-color var(--tr),box-shadow var(--tr)}
 .cl-box:focus-within{border-color:var(--claude-line);box-shadow:0 0 0 3px var(--claude-soft)}
 .cl-box.drag{border-color:var(--claude-line);box-shadow:0 0 0 3px var(--claude-soft)}
-.cl-clip{width:32px;height:32px;flex:0 0 auto;align-self:flex-end;margin-bottom:3px;color:var(--dim)}
+.cl-clip{width:28px;height:28px;flex:0 0 auto;color:var(--dim)}
 .cl-attach{display:flex;gap:6px;flex-wrap:wrap;padding:0 2px 8px}
 .cl-att-chip{position:relative;width:52px;height:52px;border-radius:10px;overflow:hidden;border:1px solid var(--line-2);flex:0 0 auto}
 .cl-att-chip img{width:100%;height:100%;object-fit:cover;display:block}
@@ -676,16 +676,21 @@ html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 .cl-att-chip button .ic{width:10px;height:10px;stroke-width:3}
 .cl-msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .cl-msg-imgs img{max-width:220px;max-height:220px;border-radius:10px;display:block;object-fit:cover;cursor:zoom-in}
-.cl-config-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 12px}
-.cl-config-row:empty{display:none}
-.cl-cfg{font-size:11px;padding:4px 8px;border-radius:8px;background:var(--btn);border:1px solid var(--line-2);color:var(--text);max-width:150px}
-.cl-usage{font-size:11px;color:var(--dim);padding:4px 9px;border-radius:99px;background:var(--btn);white-space:nowrap}
+.cl-tools{display:flex;align-items:center;gap:6px;margin-top:6px}
+.cl-config-row{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden}
+.cl-pill{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:4px 7px 4px 9px;border-radius:99px;color:var(--dim);border:1px solid transparent;white-space:nowrap;transition:background var(--tr),color var(--tr),border-color var(--tr)}
+.cl-pill:hover,.cl-pill.open{background:var(--btn-hover);border-color:var(--glass-line);color:var(--text)}
+.cl-pill-chev{width:12px;height:12px;flex:0 0 auto;stroke-width:2.2;transition:transform var(--tr)}
+.cl-pill.open .cl-pill-chev{transform:rotate(180deg)}
+.cl-usage{font-size:11px;color:var(--dim-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.cl-usage.hot{color:var(--warn)}
+.cl-cfg-menu{position:absolute;z-index:6;min-width:190px;max-width:290px;max-height:320px;overflow-y:auto;padding:6px;border-radius:14px;background:var(--glass-3);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border:1px solid var(--line-2);box-shadow:0 26px 56px -18px #000;animation:menuIn .16s cubic-bezier(.2,1,.3,1) both}
 .cl-lightbox{position:fixed;inset:0;z-index:200;background:#000000d8;display:grid;place-items:center;overflow:auto;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .cl-lightbox img{max-width:92vw;max-height:88vh;object-fit:contain;border-radius:10px;box-shadow:0 30px 80px -20px #000;cursor:zoom-in}
 .cl-lightbox img.full{max-width:none;max-height:none;cursor:zoom-out}
 .cl-lb-x{position:absolute;top:18px;right:22px;width:40px;height:40px;border-radius:50%;background:#ffffff14;color:#fff;display:grid;place-items:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .cl-lb-x:hover{background:#ffffff26}
-.cl-box textarea{flex:1 1 auto;min-width:0;border:none;background:transparent;resize:none;outline:none;padding:8px 0;height:38px;max-height:160px;line-height:1.5;font-size:13.5px;color:var(--text)}
+.cl-box textarea{width:100%;min-width:0;border:none;background:transparent;resize:none;outline:none;padding:8px 4px 4px;height:38px;max-height:160px;line-height:1.5;font-size:13.5px;color:var(--text)}
 .cl-box textarea::placeholder{color:var(--dim-2)}
 .cl-send{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;transition:transform .2s cubic-bezier(.3,1.4,.5,1),background var(--tr),color var(--tr),box-shadow var(--tr),opacity var(--tr)}
 .cl-send .ic{width:18px;height:18px;stroke-width:2.3}

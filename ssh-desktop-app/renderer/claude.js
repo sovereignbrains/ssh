@@ -182,7 +182,8 @@ function renderClaudeLog(){
     :'<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude о сервере</h4><p>Например: «почему не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты и перезапусти сервис».</p></div>';
   if(nearBottom)log.scrollTop=log.scrollHeight;
   const top=$('#clStatus');if(top)top.outerHTML=clStatusHtml(chat);
-  const cfg=$('#clConfigRow');if(cfg)cfg.innerHTML=clConfigHtml(chat);
+  const cfg=$('#clConfigRow');if(cfg)cfg.innerHTML=clCfgPills(chat);
+  const usg=$('#clUsage');if(usg)usg.innerHTML=clUsageHtml(chat);
   clSyncSend();
 }
 // One button: arrow to send, square to stop while Claude answers, spinner while the agent starts.
@@ -232,18 +233,44 @@ function closeClMenu(){
   const m=$('#clMenu');if(!m||m.hidden)return;
   m.hidden=true;$('#clPicker').classList.remove('open');
 }
-function clConfigHtml(chat){
-  const opts=(chat&&chat.configOptions)||[];
-  const selects=opts.filter(o=>o.type==='select').map(o=>{
-    const flat=(o.options||[]).flatMap(x=>x.options?x.options:[x]);
-    return '<select class="cl-cfg" data-config="'+esc(o.id)+'" title="'+esc(o.name)+'">'+
-      flat.map(v=>'<option value="'+esc(v.value)+'"'+(v.value===o.currentValue?' selected':'')+'>'+esc(v.name)+'</option>').join('')+
-      '</select>';
+function clCfgValues(o){return (o.options||[]).flatMap(x=>x.options?x.options:[x]);}
+// Own dark menu instead of a native <select>: the OS popup ignores the app theme.
+function clOpenCfgMenu(btn){
+  const chat=CL.chats[CL.connId];if(!chat)return;
+  const o=((chat.configOptions)||[]).find(x=>x.id===btn.dataset.config);if(!o)return;
+  const m=$('#clCfgMenu');
+  m.dataset.config=o.id;
+  m.innerHTML='<div class="cl-menu-h">'+esc(o.name)+'</div>'+clCfgValues(o).map(v=>
+    '<button class="cl-mi'+(v.value===o.currentValue?' on':'')+'" data-value="'+esc(v.value)+'">'+
+      '<span class="cl-mi-t"><b>'+esc(v.name)+'</b>'+(v.description?'<small>'+esc(v.description)+'</small>':'')+'</span>'+
+      '<span class="cl-mi-ck">'+(v.value===o.currentValue?IC('check'):'')+'</span></button>').join('');
+  m.hidden=false;
+  const pop=$('#clPop').getBoundingClientRect(),r=btn.getBoundingClientRect();
+  m.style.left=Math.max(8,Math.min(r.left-pop.left,pop.width-m.offsetWidth-8))+'px';
+  m.style.bottom=(pop.bottom-r.top+8)+'px';
+  btn.classList.add('open');
+}
+function closeClCfgMenu(){
+  const m=$('#clCfgMenu');if(!m||m.hidden)return;
+  m.hidden=true;
+  $$('.cl-pill.open').forEach(b=>b.classList.remove('open'));
+}
+function clCfgPills(chat){
+  if(!chat||chat.state!=='ready')return '';
+  return ((chat.configOptions)||[]).filter(o=>o.type==='select').map(o=>{
+    const cur=clCfgValues(o).find(v=>v.value===o.currentValue);
+    return '<button class="cl-pill" data-config="'+esc(o.id)+'" title="'+esc(o.name)+'">'+
+      esc((cur&&cur.name)||o.currentValue)+IC('chev-down','cl-pill-chev')+'</button>';
   }).join('');
+}
+// Context fill is what runs out first, so it leads; session cost rides along when the agent reports it.
+function clUsageHtml(chat){
   const u=chat&&chat.usage;
-  if(!u)return selects;
-  const cost=u.cost?('$'+u.cost.amount.toFixed(u.cost.amount<0.01?4:2)):Math.round(u.used/1000)+'K ток.';
-  return selects+'<span class="cl-usage" title="Контекст: '+u.used.toLocaleString('ru-RU')+' из '+u.size.toLocaleString('ru-RU')+' токенов">'+esc(cost)+'</span>';
+  if(!u||!u.size)return '';
+  const pct=Math.min(100,Math.round(u.used/u.size*100));
+  const cost=u.cost?' · $'+u.cost.amount.toFixed(u.cost.amount<0.01?4:2):'';
+  const title='Контекст: '+u.used.toLocaleString('ru-RU')+' из '+u.size.toLocaleString('ru-RU')+' токенов'+(u.cost?'. Стоимость сессии: $'+u.cost.amount.toFixed(4):'');
+  return '<span class="cl-usage'+(pct>=80?' hot':'')+'" title="'+esc(title)+'">'+pct+'%'+esc(cost)+'</span>';
 }
 function clStatusHtml(chat){
   const s=!chat?['off','не запущен']:chat.state==='starting'?['warn','запуск…']:chat.state==='ready'?(chat.busy?['warn','отвечает']:['on','готов']):['off','завершён'];
@@ -268,13 +295,17 @@ function renderClaude(){
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
       '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
-    '<div class="cl-config-row" id="clConfigRow"></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
-      '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
       '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
       '<input type="file" id="clFile" accept="image/*" multiple hidden>'+
-      '<button class="cl-send" id="clSend"></button></div>'+
+      '<div class="cl-tools">'+
+        '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
+        '<span class="cl-config-row" id="clConfigRow"></span>'+
+        '<span style="flex:1"></span>'+
+        '<span id="clUsage"></span>'+
+        '<button class="cl-send" id="clSend"></button>'+
+      '</div></div>'+
       '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span><span>вставьте или перетащите скриншот</span></div>'+
     '</div>'+
   '</div>';
@@ -298,10 +329,10 @@ function renderClaude(){
     const files=Array.from(e.dataTransfer.files||[]).filter(f=>f.type.startsWith('image/'));
     if(files.length)clAddFiles(files);
   };
-  $('#clConfigRow').onchange=e=>{
-    const sel=e.target.closest('.cl-cfg');if(!sel)return;
-    const c=CL.chats[CL.connId];if(!c||!c.chatId)return;
-    window.agentAPI.setConfigOption(c.chatId,sel.dataset.config,sel.value).then(r=>{if(!r.ok)toast(r.error,'err','Claude');});
+  $('#clConfigRow').onclick=e=>{
+    const b=e.target.closest('.cl-pill');if(!b)return;
+    if(b.classList.contains('open')){closeClCfgMenu();return;}
+    closeClCfgMenu();clOpenCfgMenu(b);
   };
   $('#clClip').onclick=()=>$('#clFile').click();
   $('#clFile').onchange=e=>{if(e.target.files.length)clAddFiles(e.target.files);e.target.value='';};
@@ -477,9 +508,17 @@ $('#clMenu').onclick=e=>{
   const t=$('#clText');if(t)t.focus();
 };
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clMenu,#clPicker'))closeClMenu();});
+$('#clCfgMenu').onclick=e=>{
+  const b=e.target.closest('[data-value]');if(!b)return;
+  const chat=CL.chats[CL.connId],configId=$('#clCfgMenu').dataset.config;
+  closeClCfgMenu();
+  if(!chat||!chat.chatId)return;
+  window.agentAPI.setConfigOption(chat.chatId,configId,b.dataset.value).then(r=>{if(!r.ok)toast(r.error,'err','Claude');});
+};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clCfgMenu,.cl-pill'))closeClCfgMenu();});
 $('#clBig').onclick=()=>setClaudeBig(!CL.big);
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&CL.open&&!modalStack.length&&e.target.closest&&e.target.closest('#clPop')){e.preventDefault();if(!$('#clMenu').hidden)closeClMenu();else closeClaude();}
+  if(e.key==='Escape'&&CL.open&&!modalStack.length&&e.target.closest&&e.target.closest('#clPop')){e.preventDefault();if(!$('#clCfgMenu').hidden)closeClCfgMenu();else if(!$('#clMenu').hidden)closeClMenu();else closeClaude();}
 });
 if(window.agentAPI){
   window.agentAPI.onStatus(p=>{
