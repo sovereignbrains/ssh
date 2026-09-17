@@ -1,6 +1,7 @@
 "use strict";
 /* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
-const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},loaded:{},renderQueued:false,open:false,big:false};
+const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},loaded:{},renderQueued:false,open:false,big:false,
+  stick:true,render:{connId:null,html:[]}};
 let clPersistTimer=null;
 function clPersistItem(it){
   // dataUrl is derived from data+mimeType — drop it before saving to halve image storage.
@@ -174,13 +175,37 @@ function clItemHtml(it){
   }
   return '';
 }
+// Incremental render: only items whose HTML changed are swapped, so text selection, open
+// details and the scroll position survive a streaming answer.
+function clNodeFrom(html){const t=document.createElement('template');t.innerHTML=html;return t.content.firstElementChild;}
+function clStripHtml(chat){
+  return (chat&&chat.busy?'<div class="cl-typing"><span class="cl-think">'+IC('claude')+'</span> Claude работает…</div>':'')+
+    (CL.stick?'':'<button class="cl-jump" id="clJump" title="Прокрутить к новым сообщениям">'+IC('chev-down')+'<span>вниз</span></button>');
+}
 function renderClaudeLog(){
   const log=$('#clLog');if(!log){renderClaude();return;}
   const chat=CL.chats[CL.connId];
-  const nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<120;
-  log.innerHTML=chat&&chat.items.length?chat.items.map(clItemHtml).join('')+(chat.busy?'<div class="cl-typing"><span class="cl-think">'+IC('claude')+'</span> Claude работает…</div>':'')
-    :'<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude о сервере</h4><p>Например: «почему не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты и перезапусти сервис».</p></div>';
-  if(nearBottom)log.scrollTop=log.scrollHeight;
+  const list=chat?chat.items.map(clItemHtml).filter(Boolean):[];
+  if(CL.render.connId!==CL.connId){CL.render={connId:CL.connId,html:[]};log.innerHTML='';}
+  if(!list.length){
+    if(CL.render.html.length||!log.firstElementChild){
+      log.innerHTML='<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude о сервере</h4><p>Например: «почему не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты и перезапусти сервис».</p></div>';
+      CL.render.html=[];
+    }
+  }else{
+    if(!CL.render.html.length)log.innerHTML='';
+    const prev=CL.render.html;
+    for(let i=0;i<list.length;i++){
+      if(list[i]===prev[i])continue;
+      const node=clNodeFrom(list[i]),cur=log.children[i];
+      if(cur&&cur.tagName===node.tagName&&cur.className===node.className){cur.innerHTML=node.innerHTML;continue;}
+      if(cur)log.replaceChild(node,cur);else log.appendChild(node);
+    }
+    while(log.children.length>list.length)log.lastElementChild.remove();
+    CL.render.html=list;
+  }
+  const strip=$('#clStrip');if(strip)strip.innerHTML=clStripHtml(chat);
+  if(CL.stick)log.scrollTop=log.scrollHeight;
   const top=$('#clStatus');if(top)top.outerHTML=clStatusHtml(chat);
   const cfg=$('#clConfigRow');if(cfg)cfg.innerHTML=clCfgPills(chat);
   const usg=$('#clUsage');if(usg)usg.innerHTML=clUsageHtml(chat);
@@ -296,6 +321,7 @@ function renderClaude(){
       '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
+    '<div class="cl-strip" id="clStrip"></div>'+
     '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
       '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
       '<input type="file" id="clFile" accept="image/*" multiple hidden>'+
@@ -311,6 +337,7 @@ function renderClaude(){
   '</div>';
   const ta=$('#clText');
   ta.value=CL.drafts[CL.connId]||'';
+  CL.render={connId:null,html:[]}; // the box was just rebuilt, so nothing is rendered yet
   renderClaudeLog();
   clGrow(ta);
   clRenderAttach();
@@ -365,6 +392,15 @@ function renderClaude(){
     delete CL.chats[CL.connId];renderClaude();$('#clText').focus();
   };
   const log=$('#clLog');
+  // Scrolling up pins the view; coming back to the bottom resumes following the answer.
+  log.onscroll=()=>{
+    const atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<40;
+    if(atBottom!==CL.stick){CL.stick=atBottom;clQueueRender();}
+  };
+  $('#clStrip').onclick=e=>{
+    if(!e.target.closest('#clJump'))return;
+    CL.stick=true;log.scrollTop=log.scrollHeight;clQueueRender();
+  };
   log.onclick=e=>{
     const img=e.target.closest('.cl-msg-imgs img');
     if(img){clOpenLightbox(img.src);return;}
@@ -402,7 +438,7 @@ async function clSend(){
   if((!text&&!atts.length)||!CL.connId)return;
   let chat=CL.chats[CL.connId];
   if(chat&&(chat.busy||chat.state==='starting'))return;
-  ta.value='';delete CL.drafts[CL.connId];clGrow(ta);
+  ta.value='';delete CL.drafts[CL.connId];clGrow(ta);CL.stick=true;
   CL.attach[CL.connId]=[];clRenderAttach();clSyncSend();
   const content=clBuildContent(text,atts);
   if(!chat||chat.state==='closed'){
@@ -428,7 +464,7 @@ function openClaude(connId){
   const f=focusedSshTab();
   if(connId)CL.connId=connId;
   else if(f&&!(CL.chats[CL.connId]&&CL.chats[CL.connId].busy))CL.connId=f.connId;
-  CL.open=true;
+  CL.open=true;CL.stick=true;
   $('#clPop').hidden=false;
   syncClaudeInset();
   $('#clFab').classList.add('open');
@@ -504,7 +540,7 @@ $('#clMenu').onclick=e=>{
   if(e.target.closest('[data-do]')){closeClMenu();return;}
   const b=e.target.closest('[data-conn]');if(!b)return;
   closeClMenu();
-  if(b.dataset.conn!==CL.connId){CL.connId=b.dataset.conn;renderClaude();}
+  if(b.dataset.conn!==CL.connId){CL.connId=b.dataset.conn;CL.stick=true;renderClaude();}
   const t=$('#clText');if(t)t.focus();
 };
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clMenu,#clPicker'))closeClMenu();});

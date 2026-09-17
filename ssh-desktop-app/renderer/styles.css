@@ -676,6 +676,11 @@ html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 .cl-att-chip button .ic{width:10px;height:10px;stroke-width:3}
 .cl-msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
 .cl-msg-imgs img{max-width:220px;max-height:220px;border-radius:10px;display:block;object-fit:cover;cursor:zoom-in}
+.cl-strip{display:flex;align-items:center;gap:8px;padding:2px 14px 6px}
+.cl-strip:empty{display:none}
+.cl-jump{display:inline-flex;align-items:center;gap:4px;margin-left:auto;font-size:11px;padding:4px 10px 4px 8px;border-radius:99px;background:var(--btn);border:1px solid var(--line-2);color:var(--text);white-space:nowrap;transition:background var(--tr)}
+.cl-jump:hover{background:var(--btn-hover)}
+.cl-jump .ic{width:13px;height:13px;stroke-width:2.2}
 .cl-tools{display:flex;align-items:center;gap:6px;margin-top:6px}
 .cl-config-row{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden}
 .cl-pill{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:4px 7px 4px 9px;border-radius:99px;color:var(--dim);border:1px solid transparent;white-space:nowrap;transition:background var(--tr),color var(--tr),border-color var(--tr)}
