@@ -101,7 +101,7 @@ function clIsLocal(connId){return connId===CL_LOCAL.connId;}
 function clProfileId(connId){const t=clTab(connId);return t?(t.local?'local':t.session):null;}
 function clTargetIco(t){return t.local?'<span class="cl-pk-os cl-pk-local">'+IC('terminal')+'</span>':'<span class="cl-pk-os" style="--osc:'+osOf(t.os).color+'">'+IC(osOf(t.os).icon)+'</span>';}
 function clTargetSub(t){return t.local?'этот компьютер':t.user+'@'+t.host+(String(t.port)!=='22'?':'+t.port:'');}
-const CL_TOOL_LABELS={run_command:'Команда',read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',edit_file:'Правка файла'};
+const CL_TOOL_LABELS={run_command:'Команда',run_command_secret:'Команда с секретом',read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',edit_file:'Правка файла'};
 function clShortTool(name){const m=/^mcp__ssh__(.+)$/.exec(name||'');return m?m[1]:(name||'');}
 function clChatById(chatId){return Object.values(CL.chats).find(c=>c.chatId===chatId)||null;}
 function clTab(connId){return clTargets().find(t=>t.connId===connId)||null;}

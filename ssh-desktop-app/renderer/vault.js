@@ -8,6 +8,7 @@ function vaultSnapshot(){
     keys:S.keys.map(k=>({id:k.id,name:k.name,type:k.type,fp:k.fp,publicKey:k.publicKey,privateKey:k.privateKey,passphrase:k.passphrase||'',created:k.created})),
     tunnels:S.tunnels.map(t=>({id:t.id,name:t.name,session:t.session,lport:t.lport,host:t.host,rport:t.rport,auto:!!t.auto})),
     projects:S.projects.map(p=>({id:p.id,name:p.name,repo:p.repo,url:p.url||'',branch:p.branch||'',place:p.place,session:p.session||'',dir:p.dir,addedAt:p.addedAt||0})),
+    secrets:S.secrets.map(x=>({id:x.id,name:x.name,value:x.value,note:x.note||'',agentAccess:!!x.agentAccess,scope:x.scope||[],expiresAt:x.expiresAt||0,createdAt:x.createdAt||0})),
     journal:S.journal,journalClearedAt:S.journalClearedAt||0,
     // shell and shellDir are per computer (installed shells, local paths): kept in localStorage, not synced.
     // The GitHub token rides with the settings: encrypted in the vault, so it travels with the sync.
@@ -27,6 +28,7 @@ function applyVaultData(d){
   S.keys=d.keys||[];
   S.tunnels=(d.tunnels||[]).map(t=>Object.assign({},t,{on:false}));
   S.projects=d.projects||[];
+  S.secrets=d.secrets||[];
   S.journal=Array.isArray(d.journal)?d.journal:[];
   S.journalClearedAt=d.journalClearedAt||0;
   if(d.settings){const st=Object.assign({},d.settings);LOCAL_PREFS.forEach(k=>delete st[k]);Object.assign(S,st);}
@@ -34,7 +36,7 @@ function applyVaultData(d){
   loadLocalPrefs(d.settings);
 }
 function renderVaultData(){
-  applyTheme(true);renderSettings();renderSessions();renderKeys();renderTunnelForm();renderTunnels();renderProjects();updateBadges();
+  applyTheme(true);renderSettings();renderSessions();renderKeys();renderSecrets();renderTunnelForm();renderTunnels();renderProjects();updateBadges();
 }
 
 // lastSavedData: the versioned data last written (updatedAt per record, tombstones) — the base for stamping changes.
@@ -144,11 +146,11 @@ async function lockVault(reason){
   S.vaultOpen=false;
   if($('#connectScreen').classList.contains('on')&&typeof connAbort==='function')connAbort('lock');
   modalStack.slice().forEach(m=>m.close());
-  S.sessions=[];S.keys=[];S.tunnels=[];S.journal=[];S.journalClearedAt=0;S.projects=[];S.github=null;
+  S.sessions=[];S.keys=[];S.tunnels=[];S.journal=[];S.journalClearedAt=0;S.projects=[];S.secrets=[];S.github=null;
   PJ.sel=null;PJ.data={};PJ.msg={};PJ.repos=null;
   lastSavedData=null;lastSnapKey='';
   if(window.vaultAPI)await window.vaultAPI.lock();
-  renderSessions();renderKeys();renderTunnelForm();renderTunnels();renderJournal();renderProjects();updateBadges();
+  renderSessions();renderKeys();renderSecrets();renderTunnelForm();renderTunnels();renderJournal();renderProjects();updateBadges();
   renderVault();
   toast(reason==='auto'?'Сейф заблокирован после бездействия':'Ключ стёрт из памяти','warn','Сейф заблокирован');
 }

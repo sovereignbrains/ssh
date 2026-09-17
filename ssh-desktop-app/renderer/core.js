@@ -85,6 +85,7 @@ const S={
   journal:[],
   tunnels:[],
   projects:[],github:null,
+  secrets:[],
   tabs:[],   // terminal leaves: SSH connections and local shells
   groups:[], // top tabs in strip order: {kind:'term',panes,sizes,dir,focus} or {kind:'sftp',connId}
   active:null // id of the active top tab; null is «Главная»
@@ -199,7 +200,7 @@ document.addEventListener('pointerdown',e=>{
 });
 
 /* ---------------- ROUTER ---------------- */
-const ORDER=['sessions','projects','keys','tunnels','journal','settings'];
+const ORDER=['sessions','projects','keys','secrets','tunnels','journal','settings'];
 function go(name){
   if(S.active!==null)activateGroup(null);
   if(!name||name===S.view)return;
@@ -216,6 +217,7 @@ function go(name){
   if(name==='settings')refreshTempInfo();
   if(name==='journal')renderJournal();
   if(name==='keys')renderKeys();
+  if(name==='secrets')renderSecrets();
   if(name==='projects'){renderProjects();pjAutoRefresh();}
 }
 window.go=go;

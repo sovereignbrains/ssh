@@ -865,6 +865,7 @@ html.cl-resizing,html.cl-resizing *{cursor:var(--cl-cursor)!important}
 .nav-item .badge{position:absolute;top:-5px;left:calc(100% - 6px);min-width:17px;height:17px;padding:0 5px;border-radius:99px;display:grid;place-items:center;
   font-size:10px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:#fff;background:var(--dim-2);border:2px solid var(--panel)}
 .nav-item .badge.ok{background:var(--ok);color:#06210f}
+.nav-item .badge.warn{background:var(--warn);color:#2a1d00}
 #bgJournal.alert{background:var(--err);color:#fff}
 .nav-item .badge.zero{display:none}
 /* Notifications sit above the dock while it is on screen. */
@@ -920,6 +921,12 @@ html.cl-resizing .view.paged{transition:none}
 .krow:hover .ibtn,.trow:hover .ibtn,.kr-acts .ibtn:focus-visible,.tr-acts .ibtn:focus-visible{opacity:1}
 .kr-install{margin-left:8px}
 .kr-install:hover{color:var(--accent);border-color:var(--accent-line)}
+.secrow{grid-template-columns:40px minmax(0,1fr) minmax(0,220px) auto}
+.k-ico.sec{background:linear-gradient(145deg,#f2c14e,#c07f2f)}
+.k-chip.clickable{cursor:pointer;transition:var(--tr)}
+.k-chip.clickable:hover{border-color:var(--accent-line);color:var(--accent)}
+.k-chip.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.sec-scope{display:flex;flex-wrap:wrap;gap:8px}
 
 .trow{grid-template-columns:40px minmax(0,1fr) minmax(0,290px) 168px auto}
 .t-ico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--dim-2);background:var(--btn);border:1px solid var(--glass-line);transition:var(--tr)}

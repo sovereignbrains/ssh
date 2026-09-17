@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('agentAPI', {
   onAction: (cb) => ipcRenderer.on('agent:action', (event, p) => cb(p)),
 });
 
+// One way only: the open vault pushes its secrets to the main process, which substitutes them
+// into commands. Nothing reads values back, and the agent has no channel to ask for them.
+contextBridge.exposeInMainWorld('secretsAPI', {
+  sync: (list) => ipcRenderer.send('secrets:sync', { list }),
+});
+
 contextBridge.exposeInMainWorld('sftpAPI', {
   home: (connId) => ipcRenderer.invoke('sftp:home', { connId }),
   list: (connId, dir) => ipcRenderer.invoke('sftp:list', { connId, dir }),

@@ -73,6 +73,7 @@ function termFocus(){
 function updateBadges(){
   $('#bgSessions').textContent=S.sessions.filter(s=>s.status==='active').length;
   $('#bgTunnels').textContent=S.tunnels.filter(t=>t.on).length;
+  $('#bgSecrets').textContent=S.secrets.filter(secretLive).length;
 }
 
 /* ---- local shell over a real PTY ---- */

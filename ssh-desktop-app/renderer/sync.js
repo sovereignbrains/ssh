@@ -61,7 +61,7 @@ function onSyncState(s){
 
 // Records changed elsewhere are updated in place, so open dialogs and tabs keep valid references.
 function applyMergedData(d){
-  const LOCAL_ONLY={sessions:['status'],keys:[],tunnels:['on']};
+  const LOCAL_ONLY={sessions:['status'],keys:[],tunnels:['on'],secrets:[]};
   const update=(list,incoming,kind,fresh)=>{
     const byId=new Map(list.map(x=>[x.id,x]));
     return (incoming||[]).map(x=>{
@@ -75,10 +75,11 @@ function applyMergedData(d){
   for(const t of S.tunnels)if(t.on&&!(d.tunnels||[]).some(x=>x.id===t.id))stopTunnelNow(t);
   S.sessions=update(S.sessions,d.sessions,'sessions',s=>({status:S.tabs.some(t=>!t.local&&t.session===s.id&&!t.closed)?'active':'idle'}));
   S.keys=update(S.keys,d.keys,'keys',()=>({}));
+  S.secrets=update(S.secrets,d.secrets,'secrets',()=>({}));
   S.tunnels=update(S.tunnels,d.tunnels,'tunnels',()=>({on:false}));
   S.journal=d.journal||[];S.journalClearedAt=d.journalClearedAt||0;
   if(d.settings){const st=Object.assign({},d.settings);LOCAL_PREFS.forEach(k=>delete st[k]);Object.assign(S,st);}
-  applyTheme(true);renderSettings();renderSessions();renderKeys();renderTunnelForm();renderTunnels();renderJournal();updateBadges();
+  applyTheme(true);renderSettings();renderSessions();renderKeys();renderSecrets();renderTunnelForm();renderTunnels();renderJournal();updateBadges();
 }
 function onSyncRemote(p){
   // Queued behind local saves so a merge never interleaves with a write.

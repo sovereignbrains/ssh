@@ -165,6 +165,21 @@
           </div>
         </section>
 
+        <section class="view paged" data-view="secrets">
+          <div class="page">
+            <div class="view-head">
+              <div>
+                <h2><svg class="ic"><use href="#ic-shield"/></svg> Секреты <span class="count-pill" id="cntSecrets">0</span></h2>
+                <p class="sub">API-ключи в зашифрованном сейфе. Claude выполняет команду с секретом, но значения не видит — в переписке остаётся метка.</p>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn primary" id="btnAddSecret" title="Завести отсек для API-ключа"><svg class="ic"><use href="#ic-plus"/></svg><span class="lbl">Новый отсек</span></button>
+            </div>
+
+            <div id="secretsBox"></div>
+          </div>
+        </section>
+
         <section class="view paged" data-view="tunnels">
           <div class="page">
             <div class="view-head">
@@ -430,6 +445,7 @@
       <button class="nav-item active" data-view="sessions" title="Сессии (Alt+1 — Главная)"><span class="ni"><svg class="ic"><use href="#ic-sessions"/></svg><span class="badge ok" id="bgSessions" title="Активных сессий">0</span></span><span class="nl">Сессии</span></button>
       <button class="nav-item" data-view="projects" title="Проекты"><span class="ni"><svg class="ic"><use href="#ic-github"/></svg><span class="badge" id="bgProjects" title="Проектов с несохранёнными изменениями">0</span></span><span class="nl">Проекты</span></button>
       <button class="nav-item" data-view="keys" title="Ключи"><span class="ni"><svg class="ic"><use href="#ic-key"/></svg></span><span class="nl">Ключи</span></button>
+      <button class="nav-item" data-view="secrets" title="Секреты"><span class="ni"><svg class="ic"><use href="#ic-shield"/></svg><span class="badge warn" id="bgSecrets" title="Секретов, доступных агенту">0</span></span><span class="nl">Секреты</span></button>
       <button class="nav-item" data-view="tunnels" title="Пробросы портов"><span class="ni"><svg class="ic"><use href="#ic-tunnels"/></svg><span class="badge ok" id="bgTunnels" title="Работающих пробросов">0</span></span><span class="nl">Пробросы</span></button>
       <button class="nav-item" data-view="journal" title="Журнал"><span class="ni"><svg class="ic"><use href="#ic-activity"/></svg><span class="badge" id="bgJournal" title="Сбоев в журнале">0</span></span><span class="nl">Журнал</span></button>
       <button class="nav-item" data-view="settings" title="Настройки"><span class="ni"><svg class="ic"><use href="#ic-settings"/></svg></span><span class="nl">Настройки</span></button>
@@ -531,6 +547,7 @@
 <script src="renderer/claude.js"></script>
 <script src="renderer/projects.js"></script>
 <script src="renderer/keys.js"></script>
+<script src="renderer/secrets.js"></script>
 <script src="renderer/tunnels.js"></script>
 <script src="renderer/journal.js"></script>
 <script src="renderer/settings.js"></script>

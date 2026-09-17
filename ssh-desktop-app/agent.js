@@ -87,6 +87,49 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   const permissions = new Map(); // requestId -> resolve(optionId|null)
   let mcpPort = 0;
 
+  /* ---- secrets: the model never sees a value.
+   * The renderer pushes what the open vault holds; the agent can only name a secret. The value is
+   * substituted when the command starts and cut back out of the output, so nothing lands in the
+   * conversation or in the saved transcript. */
+  let secrets = [];
+  ipcMain.on('secrets:sync', (event, { list }) => { secrets = Array.isArray(list) ? list : []; });
+
+  const SECRET_RE = /\{\{secret:([A-Za-z_][A-Za-z0-9_]*)\}\}/g;
+  const placeholder = (name) => '{{secret:' + name + '}}';
+  const secretNames = () => secrets.filter((s) => s.agentAccess && (!s.expiresAt || s.expiresAt > Date.now())).map((s) => s.name);
+
+  function secretFor(chat, name) {
+    const s = secrets.find((x) => x.name === name);
+    if (!s) return { error: 'секрет «' + name + '» не заведён — владелец создаёт его в разделе «Секреты»' };
+    if (!s.agentAccess) return { error: 'секрет «' + name + '» недоступен — включите доступ в разделе «Секреты»' };
+    if (s.expiresAt && s.expiresAt <= Date.now()) return { error: 'секрет «' + name + '»: срок доступа истёк — продлите его в разделе «Секреты»' };
+    const scope = s.scope || [];
+    if (scope.length && !scope.includes(chat.profileId)) return { error: 'секрет «' + name + '» не разрешён для этой сессии' };
+    return { value: s.value };
+  }
+  // Every known value is cut out, not only the ones this call asked for: a command may print a
+  // secret the agent never requested. Short values are left alone — they would shred the output.
+  function redact(out) {
+    let s = String(out);
+    for (const item of secrets) {
+      if (!item.value || item.value.length < 6) continue;
+      if (s.includes(item.value)) s = s.split(item.value).join(placeholder(item.name));
+    }
+    return s;
+  }
+  // Names the call needs: asked for by env_secrets, or written into the command as {{secret:NAME}}.
+  function collectSecrets(chat, command, envSecrets) {
+    const inCommand = (String(command).match(SECRET_RE) || []).map((m) => m.slice(9, -2));
+    const names = [...new Set([...(envSecrets || []), ...inCommand])];
+    const values = new Map();
+    const errors = [];
+    for (const name of names) {
+      const r = secretFor(chat, name);
+      if (r.error) errors.push(r.error); else values.set(name, r.value);
+    }
+    return { names, values, errors };
+  }
+
   /* ---- durable per-server memory: resumable ACP session id + "always allow" tool decisions.
    * Keyed by the saved session's stable profile id (not connId, which is a fresh id per connect
    * attempt), so a dropped SSH link or an app restart can pick the same Claude conversation back up. */
@@ -164,11 +207,11 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     }
     return { file: 'cmd.exe', pre: ['/d', '/s', '/c'] };
   }
-  function execLocal(command, cwd, timeoutMs) {
+  function execLocal(command, cwd, timeoutMs, env) {
     return new Promise((resolve) => {
       const started = Date.now();
       const sh = localShell();
-      const child = spawn(sh.file, [...sh.pre, command], { cwd: cwd || workspaceDir(), windowsHide: true });
+      const child = spawn(sh.file, [...sh.pre, command], { cwd: cwd || workspaceDir(), windowsHide: true, env: env ? { ...process.env, ...env } : process.env });
       let out = '';
       let timedOut = false;
       const add = (d) => { if (out.length < OUTPUT_LIMIT * 4) out += d.toString('utf8'); };
@@ -212,7 +255,9 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     return path.resolve(workspaceDir(), t);
   };
 
-  function execRemote(connId, command, timeoutMs) {
+  // stdin carries the secret exports when there are any: the SSH server needs no AcceptEnv, and
+  // the values never appear in argv, so `ps` on the server shows nothing.
+  function execRemote(connId, command, timeoutMs, stdin) {
     return new Promise((resolve, reject) => {
       const entry = getConnection(connId);
       if (!entry) { reject(new Error('SSH-сессия не подключена')); return; }
@@ -224,6 +269,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
         const add = (d) => { if (out.length < OUTPUT_LIMIT * 4) out += d.toString('utf8'); };
         stream.on('data', add);
         stream.stderr.on('data', add);
+        if (stdin != null) stream.end(stdin);
         const timer = setTimeout(() => { timedOut = true; try { stream.close(); } catch (_) {} }, timeoutMs);
         let code = null;
         let signal = null;
@@ -236,13 +282,23 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     });
   }
 
-  const text = (t, isError) => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
+  // Redaction sits here so every tool is covered: whatever a tool returns, no secret rides along.
+  const text = (t, isError) => ({ content: [{ type: 'text', text: redact(t) }], ...(isError ? { isError: true } : {}) });
 
   function buildMcp(chat) {
     const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
     const z = require('zod');
     const server = new McpServer({ name: 'ssh-client', version: '1.0.0' });
     const where = chat.local ? 'on this computer' : 'on the remote server';
+    const secretHelp = () => {
+      const names = secretNames();
+      return names.length
+        ? ' Secrets available to you: ' + names.join(', ') + '. Name them in env_secrets and they arrive as environment variables, or write {{secret:NAME}} inside the command. The app substitutes the value when the command starts and cuts it out of the output, so you never see it — never ask the user to paste a secret into the chat.'
+        : ' No secrets are available to you right now. If a command needs an API key, ask the user to add it in the app section «Секреты» and switch on agent access — do not ask them to paste the value into the chat.';
+    };
+    // Values ride in over stdin, so they stay out of argv and need no AcceptEnv on the server.
+    const remoteScript = (values, command) =>
+      [...values].map(([name, value]) => name + '=' + shQuote(value) + '; export ' + name).join('\n') + '\n' + command + '\n';
     const conn = () => chat.connId;
     // SFTP does not expand ~, the shell does: resolve it against the SFTP home directory.
     const remotePath = async (p) => {
@@ -254,21 +310,32 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     };
 
     server.registerTool('run_command', {
-      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.',
+      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.' + secretHelp(),
       inputSchema: {
         command: z.string().describe('Shell command to run'),
         cwd: z.string().optional().describe(chat.local ? 'Working directory on this computer' : 'Remote working directory'),
         timeout_seconds: z.number().int().min(1).max(900).optional().describe('Kill the command after this many seconds (default 120)'),
+        env_secrets: z.array(z.string()).optional().describe('Names of secrets to pass to the command as environment variables. The app fills in the values; they are never shown to you.'),
       },
-    }, ({ command, cwd, timeout_seconds }) => guard(async () => {
+    }, ({ command, cwd, timeout_seconds, env_secrets }) => guard(async () => {
+      const sec = collectSecrets(chat, command, env_secrets);
+      if (sec.errors.length) return text('Команда не выполнена: ' + sec.errors.join('; ') + '.', true);
       const cdTarget = !cwd ? '' : cwd === '~' ? '~' : cwd.startsWith('~/') ? '"$HOME"/' + shQuote(cwd.slice(2)) : shQuote(cwd);
       const full = cwd ? 'cd ' + cdTarget + ' && ' + command : command;
-      const ok = await askApproval(chat, 'run_command', command, cwd ? 'в папке ' + cwd : '');
+      // A separate tool key for secret calls: «always allow» for plain commands must not silently
+      // extend to commands that carry a key.
+      const ok = await askApproval(chat, sec.names.length ? 'run_command_secret' : 'run_command', command,
+        [cwd ? 'в папке ' + cwd : '', sec.names.length ? 'секреты: ' + sec.names.join(', ') : ''].filter(Boolean).join(' · '));
       if (!ok) return text('Пользователь отклонил выполнение команды.', true);
       const limit = (timeout_seconds || 120) * 1000;
-      const r = chat.local ? await execLocal(command, cwd ? localResolve(cwd) : null, limit) : await execRemote(conn(), full, limit);
+      const fill = (s) => s.replace(SECRET_RE, (m, name) => (sec.values.has(name) ? sec.values.get(name) : m));
+      const r = chat.local
+        ? await execLocal(fill(command), cwd ? localResolve(cwd) : null, limit, Object.fromEntries(sec.values))
+        : sec.values.size
+          ? await execRemote(conn(), 'sh -s', limit, remoteScript(sec.values, fill(full)))
+          : await execRemote(conn(), full, limit);
       const status = r.timedOut ? 'timed out after ' + (timeout_seconds || 120) + 's' : 'exit code ' + (r.code === null ? '?' : r.code) + (r.signal ? ', signal ' + r.signal : '');
-      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: status });
+      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: status + (sec.names.length ? ' · секреты: ' + sec.names.join(', ') : '') });
       return text('[' + status + ', ' + r.ms + ' ms]\n' + clip(r.output, OUTPUT_LIMIT), r.timedOut || (r.code !== 0 && r.code !== null));
     }));
 
