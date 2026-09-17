@@ -440,6 +440,8 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       const mem = memFor(chat.profileId);
       if (mem) { mem.sessionId = chat.session.sessionId; saveMemory(); }
       status(chat, 'ready', '', resumed);
+      const configOptions = (chat.session.newSessionResponse && chat.session.newSessionResponse.configOptions) || null;
+      if (configOptions) sendToRenderer('agent:update', { chatId: chat.chatId, update: { sessionUpdate: 'config_option_update', configOptions } });
       (async () => {
         while (chats.has(chat.chatId)) {
           let m;
@@ -515,6 +517,17 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       sendToRenderer('agent:stop', { chatId, stopReason: 'error', error: (e && e.message) || String(e) });
     });
     return { ok: true };
+  });
+
+  ipcMain.handle('agent:set-config-option', async (event, { chatId, configId, value }) => {
+    const chat = chats.get(chatId);
+    if (!chat || !chat.ctx || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
+    try {
+      await chat.ctx.request(chat.acp.methods.agent.session.setConfigOption, { sessionId: chat.session.sessionId, configId, value });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
   });
 
   ipcMain.handle('agent:cancel', async (event, { chatId }) => {

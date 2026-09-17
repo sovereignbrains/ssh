@@ -82,6 +82,18 @@ function clBuildContent(text,atts){
   if(text)blocks.push({type:'text',text:text});
   return blocks;
 }
+function clOpenLightbox(src){
+  const el=document.createElement('div');
+  el.className='cl-lightbox';
+  el.innerHTML='<button class="cl-lb-x" title="Закрыть (Esc)">'+IC('x')+'</button><img src="'+src+'" alt="">';
+  document.body.appendChild(el);
+  const onKey=e=>{if(e.key==='Escape')close();};
+  const close=()=>{el.remove();document.removeEventListener('keydown',onKey);};
+  el.addEventListener('click',e=>{if(e.target===el)close();});
+  el.querySelector('.cl-lb-x').onclick=close;
+  el.querySelector('img').onclick=e=>e.currentTarget.classList.toggle('full');
+  document.addEventListener('keydown',onKey);
+}
 const CL_LOCAL={connId:'local',local:true,name:'Этот компьютер'};
 function clTargets(){return [CL_LOCAL,...fxLiveTabs()];}
 function clIsLocal(connId){return connId===CL_LOCAL.connId;}
@@ -170,6 +182,7 @@ function renderClaudeLog(){
     :'<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude о сервере</h4><p>Например: «почему не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты и перезапусти сервис».</p></div>';
   if(nearBottom)log.scrollTop=log.scrollHeight;
   const top=$('#clStatus');if(top)top.outerHTML=clStatusHtml(chat);
+  const cfg=$('#clConfigRow');if(cfg)cfg.innerHTML=clConfigHtml(chat);
   clSyncSend();
 }
 // One button: arrow to send, square to stop while Claude answers, spinner while the agent starts.
@@ -219,6 +232,19 @@ function closeClMenu(){
   const m=$('#clMenu');if(!m||m.hidden)return;
   m.hidden=true;$('#clPicker').classList.remove('open');
 }
+function clConfigHtml(chat){
+  const opts=(chat&&chat.configOptions)||[];
+  const selects=opts.filter(o=>o.type==='select').map(o=>{
+    const flat=(o.options||[]).flatMap(x=>x.options?x.options:[x]);
+    return '<select class="cl-cfg" data-config="'+esc(o.id)+'" title="'+esc(o.name)+'">'+
+      flat.map(v=>'<option value="'+esc(v.value)+'"'+(v.value===o.currentValue?' selected':'')+'>'+esc(v.name)+'</option>').join('')+
+      '</select>';
+  }).join('');
+  const u=chat&&chat.usage;
+  if(!u)return selects;
+  const cost=u.cost?('$'+u.cost.amount.toFixed(u.cost.amount<0.01?4:2)):Math.round(u.used/1000)+'K ток.';
+  return selects+'<span class="cl-usage" title="Контекст: '+u.used.toLocaleString('ru-RU')+' из '+u.size.toLocaleString('ru-RU')+' токенов">'+esc(cost)+'</span>';
+}
 function clStatusHtml(chat){
   const s=!chat?['off','не запущен']:chat.state==='starting'?['warn','запуск…']:chat.state==='ready'?(chat.busy?['warn','отвечает']:['on','готов']):['off','завершён'];
   return '<span class="pill '+s[0]+'" id="clStatus"><span class="sdot"></span>'+s[1]+'</span>';
@@ -242,6 +268,7 @@ function renderClaude(){
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
       '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
+    '<div class="cl-config-row" id="clConfigRow"></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
       '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
@@ -270,6 +297,11 @@ function renderClaude(){
     e.preventDefault();clBox.classList.remove('drag');
     const files=Array.from(e.dataTransfer.files||[]).filter(f=>f.type.startsWith('image/'));
     if(files.length)clAddFiles(files);
+  };
+  $('#clConfigRow').onchange=e=>{
+    const sel=e.target.closest('.cl-cfg');if(!sel)return;
+    const c=CL.chats[CL.connId];if(!c||!c.chatId)return;
+    window.agentAPI.setConfigOption(c.chatId,sel.dataset.config,sel.value).then(r=>{if(!r.ok)toast(r.error,'err','Claude');});
   };
   $('#clClip').onclick=()=>$('#clFile').click();
   $('#clFile').onchange=e=>{if(e.target.files.length)clAddFiles(e.target.files);e.target.value='';};
@@ -304,7 +336,7 @@ function renderClaude(){
   const log=$('#clLog');
   log.onclick=e=>{
     const img=e.target.closest('.cl-msg-imgs img');
-    if(img){openModal({title:'Изображение',icon:'image',body:'<img src="'+img.src+'" style="max-width:100%;border-radius:10px;display:block">'});return;}
+    if(img){clOpenLightbox(img.src);return;}
     const a=e.target.closest('[data-allow]');
     if(a){
       const card=a.closest('[data-approval]'),it=clFindItem('approvalId',card.dataset.approval);
@@ -393,7 +425,7 @@ function setClaudeBig(v){
   applyClaudeSize();
 }
 /* ---- chat size: drag the left or top edge, or the corner between them; remembered on this computer ---- */
-const CL_MIN_W=360,CL_MIN_H=380;
+const CL_MIN_W=360,CL_MIN_H=380,CL_PUSH_MAX=520;
 try{const v=JSON.parse(localStorage.getItem('ssh.chatSize')||'null');if(v&&v.w>0&&v.h>0)CL.size=v;}catch(e){}
 function applyClaudeSize(){
   const pop=$('#clPop'),own=!CL.big&&CL.size;
@@ -405,7 +437,7 @@ function applyClaudeSize(){
 function syncClaudeInset(){
   const root=document.documentElement;
   root.classList.toggle('cl-open',CL.open);
-  if(CL.open)root.style.setProperty('--cl-w',$('#clPop').offsetWidth+'px');
+  if(CL.open)root.style.setProperty('--cl-w',Math.min($('#clPop').offsetWidth,CL_PUSH_MAX)+'px');
 }
 $$('#clPop .cl-rs').forEach(h=>{
   h.onpointerdown=e=>{
@@ -494,6 +526,10 @@ if(window.agentAPI){
       if(!it){it={kind:'plan'};chat.items.push(it);}
       it.entries=u.entries||[];
       if(it.entries.length&&it.entries.every(e=>e.status==='completed'))it.done=true;
+    }else if(u.sessionUpdate==='config_option_update'){
+      chat.configOptions=u.configOptions||[];
+    }else if(u.sessionUpdate==='usage_update'){
+      chat.usage={used:u.used,size:u.size,cost:u.cost||null};
     }else return;
     clQueueRender();
   });

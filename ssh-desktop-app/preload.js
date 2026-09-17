@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('agentAPI', {
   saveTranscript: (profileId, items) => ipcRenderer.invoke('agent:save-transcript', { profileId, items }),
   prompt: (chatId, content) => ipcRenderer.invoke('agent:prompt', { chatId, content }),
   cancel: (chatId) => ipcRenderer.invoke('agent:cancel', { chatId }),
+  setConfigOption: (chatId, configId, value) => ipcRenderer.invoke('agent:set-config-option', { chatId, configId, value }),
   close: (chatId) => ipcRenderer.invoke('agent:close', { chatId }),
   approve: (approvalId, allow, always) => ipcRenderer.send('agent:approval-decision', { approvalId, allow, always }),
   choosePermission: (requestId, optionId) => ipcRenderer.send('agent:permission-decision', { requestId, optionId }),
