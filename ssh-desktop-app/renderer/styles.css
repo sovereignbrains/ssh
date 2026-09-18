@@ -1226,3 +1226,19 @@ html.cl-resizing .set-layout{transition:none}
   .prow{grid-template-columns:40px minmax(0,1fr) auto}
   .pr-st{grid-column:2/-1;grid-row:2}
 }
+
+/* ---------------- ИНСТРУМЕНТЫ ---------------- */
+.nt-list{margin-top:14px}
+.nt-list .krow{cursor:default}
+.nt-mon{margin-top:14px}
+.nt-spark{display:block;width:100%;height:46px;margin-bottom:12px}
+.nt-spark polyline{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.nt-stats{display:flex;flex-wrap:wrap;gap:10px}
+.nt-stats span{flex:1 1 92px;display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--glass-soft)}
+.nt-stats b{font-size:14px;color:var(--text)}
+.nt-stats small{font-size:11px;color:var(--dim)}
+.nt-log{display:flex;flex-direction:column;gap:3px;margin-top:12px;font-size:12px;color:var(--dim)}
+.nt-log span{display:flex;gap:8px;align-items:baseline}
+.nt-log i{font-style:normal;font-variant-numeric:tabular-nums;color:var(--dim);opacity:.7;min-width:62px}
+.nt-log em{font-style:normal;color:var(--err)}
+.hint.warn{color:var(--warn)}

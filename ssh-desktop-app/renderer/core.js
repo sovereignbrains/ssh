@@ -200,7 +200,7 @@ document.addEventListener('pointerdown',e=>{
 });
 
 /* ---------------- ROUTER ---------------- */
-const ORDER=['sessions','projects','keys','secrets','tunnels','journal','settings'];
+const ORDER=['sessions','projects','keys','secrets','tools','tunnels','journal','settings'];
 function go(name){
   if(S.active!==null)activateGroup(null);
   if(!name||name===S.view)return;
@@ -218,6 +218,7 @@ function go(name){
   if(name==='journal')renderJournal();
   if(name==='keys')renderKeys();
   if(name==='secrets')renderSecrets();
+  if(name==='tools')renderTools();
   if(name==='projects'){renderProjects();pjAutoRefresh();}
 }
 window.go=go;

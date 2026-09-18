@@ -156,6 +156,18 @@ contextBridge.exposeInMainWorld('keysAPI', {
   install: (connId, publicKey) => ipcRenderer.invoke('keys:install', { connId, publicKey }),
 });
 
+contextBridge.exposeInMainWorld('netAPI', {
+  targets: () => ipcRenderer.invoke('net:targets'),
+  speed: (opts) => ipcRenderer.invoke('net:speed', opts),
+  rtt: (opts) => ipcRenderer.invoke('net:rtt', opts),
+  dns: (hostname) => ipcRenderer.invoke('net:dns', { hostname }),
+  overview: () => ipcRenderer.invoke('net:overview'),
+  mtu: (host) => ipcRenderer.invoke('net:mtu', { host }),
+  monitorStart: (opts) => ipcRenderer.invoke('net:monitor-start', opts),
+  monitorStop: (id) => ipcRenderer.invoke('net:monitor-stop', { id }),
+  onSample: (cb) => ipcRenderer.on('net:sample', (event, p) => cb(p)),
+});
+
 contextBridge.exposeInMainWorld('githubAPI', {
   user: (token) => ipcRenderer.invoke('github:user', { token }),
   repos: (token) => ipcRenderer.invoke('github:repos', { token }),

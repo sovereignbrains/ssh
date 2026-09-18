@@ -180,6 +180,69 @@
           </div>
         </section>
 
+        <section class="view paged" data-view="tools">
+          <div class="page">
+            <div class="view-head">
+              <div>
+                <h2><svg class="ic"><use href="#ic-zap"/></svg> Инструменты</h2>
+                <p class="sub">Замеры сети: скорость, отклик, MTU и наблюдение за тем, как всё это плавает во времени.</p>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn" id="btnNtRefresh" title="Перечитать адаптеры и маршруты"><svg class="ic"><use href="#ic-refresh"/></svg><span class="lbl">Обновить сведения</span></button>
+            </div>
+
+            <div class="card set-panel">
+              <div class="srow col">
+                <div class="srow-t"><b>Через прокси</b><small>Пусто — меряем как обычно. Адрес вида <span class="mono">127.0.0.1:23003</span> прогонит все замеры через него: так сравнивают выходы VPN между собой.</small></div>
+                <input class="inp mono" id="ntProxy" placeholder="127.0.0.1:23003" autocomplete="off" style="max-width:280px">
+              </div>
+            </div>
+
+            <h3 class="set-h">Скорость</h3>
+            <div class="card set-panel">
+              <div class="srow">
+                <div class="srow-t"><b>Загрузка с нескольких точек</b><small>Одна медленная точка — её беда, все сразу — ваша.</small></div>
+                <button class="btn primary" id="btnNtSpeed"><svg class="ic"><use href="#ic-download"/></svg> Прогнать</button>
+              </div>
+              <div id="ntSpeedBox"></div>
+            </div>
+
+            <h3 class="set-h">Отклик</h3>
+            <div class="card set-panel">
+              <div class="srow">
+                <div class="srow-t"><b>Задержка и разброс</b><small>Восемь TCP-рукопожатий до каждой точки: минимум, среднее, максимум и джиттер.</small></div>
+                <button class="btn" id="btnNtRtt"><svg class="ic"><use href="#ic-activity"/></svg> Замерить</button>
+              </div>
+              <div id="ntRttBox"></div>
+            </div>
+
+            <h3 class="set-h">Наблюдение</h3>
+            <div class="card set-panel">
+              <div class="srow">
+                <div class="srow-t"><b>Замер по кругу</b><small>Скорость и отклик раз в заданное время — чтобы поймать провалы, которых разовый замер не видит.</small></div>
+                <div class="seg" id="ntEvery">
+                  <button class="seg-item on" data-every="20">20 с</button>
+                  <button class="seg-item" data-every="60">минута</button>
+                  <button class="seg-item" data-every="300">5 минут</button>
+                </div>
+                <button class="btn primary" id="btnNtMon"><svg class="ic"><use href="#ic-play"/></svg> Начать</button>
+              </div>
+              <div id="ntMonBox"></div>
+            </div>
+
+            <h3 class="set-h">Этот компьютер</h3>
+            <div class="card set-panel">
+              <div class="srow">
+                <div class="srow-t"><b>MTU до узла</b><small>Наибольший пакет, проходящий без дробления. У тоннелей значение обычно своё, не как у Wi-Fi.</small></div>
+                <input class="inp mono" id="ntMtuHost" value="1.1.1.1" autocomplete="off" style="max-width:180px">
+                <button class="btn" id="btnNtMtu"><svg class="ic"><use href="#ic-search"/></svg> Померить</button>
+              </div>
+              <div id="ntMtuBox"></div>
+              <div id="ntOverviewBox"></div>
+            </div>
+          </div>
+        </section>
+
         <section class="view paged" data-view="tunnels">
           <div class="page">
             <div class="view-head">
@@ -446,6 +509,7 @@
       <button class="nav-item" data-view="projects" title="Проекты"><span class="ni"><svg class="ic"><use href="#ic-github"/></svg><span class="badge" id="bgProjects" title="Проектов с несохранёнными изменениями">0</span></span><span class="nl">Проекты</span></button>
       <button class="nav-item" data-view="keys" title="Ключи"><span class="ni"><svg class="ic"><use href="#ic-key"/></svg></span><span class="nl">Ключи</span></button>
       <button class="nav-item" data-view="secrets" title="Секреты"><span class="ni"><svg class="ic"><use href="#ic-shield"/></svg><span class="badge warn" id="bgSecrets" title="Секретов, доступных агенту">0</span></span><span class="nl">Секреты</span></button>
+      <button class="nav-item" data-view="tools" title="Инструменты"><span class="ni"><svg class="ic"><use href="#ic-zap"/></svg></span><span class="nl">Инструменты</span></button>
       <button class="nav-item" data-view="tunnels" title="Пробросы портов"><span class="ni"><svg class="ic"><use href="#ic-tunnels"/></svg><span class="badge ok" id="bgTunnels" title="Работающих пробросов">0</span></span><span class="nl">Пробросы</span></button>
       <button class="nav-item" data-view="journal" title="Журнал"><span class="ni"><svg class="ic"><use href="#ic-activity"/></svg><span class="badge" id="bgJournal" title="Сбоев в журнале">0</span></span><span class="nl">Журнал</span></button>
       <button class="nav-item" data-view="settings" title="Настройки"><span class="ni"><svg class="ic"><use href="#ic-settings"/></svg></span><span class="nl">Настройки</span></button>
@@ -549,6 +613,7 @@
 <script src="renderer/projects.js"></script>
 <script src="renderer/keys.js"></script>
 <script src="renderer/secrets.js"></script>
+<script src="renderer/tools.js"></script>
 <script src="renderer/tunnels.js"></script>
 <script src="renderer/journal.js"></script>
 <script src="renderer/settings.js"></script>

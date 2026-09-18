@@ -10,7 +10,9 @@ const registerAgent = require('./agent');
 const registerUpdater = require('./updater');
 const registerSync = require('./sync');
 const registerGithub = require('./github');
+const registerNetTools = require('./nettools');
 let syncService = null;
+let netToolsService = null;
 const pty = require('node-pty');
 const { execFileSync } = require('child_process');
 
@@ -1023,6 +1025,7 @@ app.whenReady().then(() => {
     getConnection: (connId) => connections.get(connId),
     getWindow: () => mainWindow,
   });
+  netToolsService = registerNetTools({ ipcMain, sendToRenderer, logError });
   registerUpdater({
     ipcMain, app, sendToRenderer, logError, saveConfig,
     getConfig: () => config,
@@ -1046,6 +1049,7 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   if (vault) vault.lock();
   if (agentService) agentService.shutdown();
+  if (netToolsService) netToolsService.shutdown();
   for (const id of [...tunnels.keys()]) stopTunnel(id);
   for (const p of ptys.values()) { try { p.kill(); } catch (_) {} }
   ptys.clear();
