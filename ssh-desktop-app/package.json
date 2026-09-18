@@ -35,16 +35,8 @@
       "output": "dist"
     },
     "files": [
-      "main.js",
-      "preload.js",
-      "vault.js",
-      "sftp.js",
-      "agent.js",
-      "updater.js",
+      "*.js",
       "google-oauth.json",
-      "google-drive.js",
-      "sync.js",
-      "github.js",
       "renderer/**/*",
       "assets/**/*",
       "index.html",
