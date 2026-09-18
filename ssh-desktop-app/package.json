@@ -74,6 +74,7 @@
       "artifactName": "SSH-Client-Setup-${version}.${ext}"
     },
     "beforeBuild": "scripts/before-build.js",
+    "beforePack": "scripts/check-packaged-files.js",
     "npmRebuild": false,
     "publish": [
       {
