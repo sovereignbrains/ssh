@@ -68,6 +68,8 @@ function vaultStatus() {
     store: config.store,
     dataDir: dir,
     defaultDir: app.getPath('userData'),
+    meta: !dirMissing && vault.exists() ? vault.meta() : null,
+    deviceId: config.deviceId || '',
   };
 }
 

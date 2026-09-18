@@ -76,6 +76,32 @@ function renderVault(){
   if(appEl){if(open)appEl.removeAttribute('inert');else appEl.setAttribute('inert','');}
   if(!open){renderLock();lockScreenFocus();}
 }
+// Which copy is this, and how fresh. Unlocking a stale copy would let it spread from here to every
+// other computer on the next sync, so the answer belongs on the lock screen, before the password.
+let failedUnlocks=0,capsOn=false;
+function lockIdentity(){
+  const st=S.vaultStatus||{},m=st.meta;
+  if(!m)return '';
+  const saved=m.savedAt?new Date(m.savedAt).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  const own=m.device&&st.deviceId&&m.device===st.deviceId;
+  const s=typeof SYNC!=='undefined'&&SYNC.s;
+  const sync=s&&s.signedIn?(s.lastSyncAt?'Google Диск: '+syncClock(s.lastSyncAt):'Google Диск: ещё не синхронизировалось'):'';
+  return '<span class="lock-id">'+
+    '<b class="mono" title="Отпечаток сейфа — у копий, которые открываются одним мастер-паролем, он совпадает">'+esc(m.fingerprint)+'</b>'+
+    (saved?'<span title="Когда эту копию файла записали в последний раз">записан '+esc(saved)+(own?' · на этом компьютере':' · на другом компьютере')+'</span>':'')+
+    (sync?'<span>'+esc(sync)+'</span>':'')+
+  '</span>';
+}
+function lockNote(){
+  const el=$('#lockNote');
+  if(!el)return;
+  el.innerHTML=(capsOn?'<span class="ln-caps">'+IC('alert')+' включён Caps Lock</span>':'')+
+    (failedUnlocks?'<span class="ln-fail">'+IC('xcircle')+' неверный мастер-пароль · попыток: '+failedUnlocks+'</span>':'');
+}
+function capsCheck(e){
+  const on=!!(e.getModifierState&&e.getModifierState('CapsLock'));
+  if(on!==capsOn){capsOn=on;lockNote();}
+}
 function renderLock(){
   const st=S.vaultStatus||{exists:true};
   const title=$('#lockTitle'),text=$('#lockText'),fields=$('#lockFields'),btn=$('#btnUnlock'),alt=$('#btnLockAlt');
@@ -99,13 +125,17 @@ function renderLock(){
   }else{
     title.textContent='Сейф заблокирован';
     text.innerHTML='Введите мастер-пароль, чтобы продолжить.'+
-      (S.tabs.some(t=>!t.local)?'<br>Активные подключения продолжают работать.':'')+where;
+      (S.tabs.some(t=>!t.local)?'<br>Активные подключения продолжают работать.':'')+where+lockIdentity();
     fields.innerHTML=pwInput('lockPass','Мастер-пароль','');
     btn.innerHTML=IC('unlock')+' Разблокировать';
     alt.style.display='none';
     alt.onclick=null;
   }
-  fields.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')lockPrimary();}));
+  fields.querySelectorAll('input').forEach(i=>{
+    i.addEventListener('keydown',e=>{capsCheck(e);if(e.key==='Enter')lockPrimary();});
+    i.addEventListener('keyup',capsCheck);
+  });
+  lockNote();
   if(typeof syncRestoreVisibility==='function')syncRestoreVisibility();
 }
 async function refreshVaultStatus(){
@@ -118,7 +148,7 @@ async function lockPrimary(){
   if(st.dirMissing){await refreshVaultStatus();return;}
   const p1=$('#lockPass'),p2=$('#lockPass2'),b=$('#btnUnlock');
   if(!p1)return;
-  const bad=(x,msg)=>{if(x){x.classList.add('err');setTimeout(()=>x.classList.remove('err'),450);x.focus();}toast(msg,'err','Сейф');};
+  const bad=(x,msg,quiet)=>{if(x){x.classList.add('err');setTimeout(()=>x.classList.remove('err'),450);x.focus();}if(!quiet)toast(msg,'err','Сейф');};
   if(!st.exists){
     if(p1.value.length<8)return bad(p1,'Мастер-пароль: минимум 8 символов');
     if(p1.value!==p2.value)return bad(p2,'Пароли не совпадают');
@@ -127,7 +157,12 @@ async function lockPrimary(){
   b.innerHTML='<span class="spinner dark"></span> '+(st.exists?'Проверка…':'Создание…');b.disabled=true;
   const r=st.exists?await window.vaultAPI.unlock(p1.value):await window.vaultAPI.create(p1.value);
   b.innerHTML=old;b.disabled=false;
-  if(!r.ok){p1.value='';if(p2)p2.value='';if(st.exists)logEvent('warn','vault','Неудачная попытка разблокировки: '+r.error,'');return bad(p1,r.error);}
+  if(!r.ok){
+    p1.value='';if(p2)p2.value='';
+    if(st.exists){failedUnlocks++;lockNote();logEvent('warn','vault','Неудачная попытка разблокировки ('+failedUnlocks+'): '+r.error,'');}
+    return bad(p1,r.error,st.exists);
+  }
+  failedUnlocks=0;lockNote();
   applyVaultData(st.exists?(r.data||{}):{});
   S.vaultStatus=st.exists?r.status:r;
   S.vaultOpen=true;

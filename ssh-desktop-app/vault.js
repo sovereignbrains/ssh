@@ -77,6 +77,22 @@ class Vault {
   }
 
   exists() { return fs.existsSync(this.file); }
+
+  // What the lock screen can tell about the file before anything is decrypted: which vault this is
+  // (copies that open with the same password share a fingerprint) and how fresh the copy is.
+  meta() {
+    try {
+      const env = readEnvelope(this.file);
+      return {
+        fingerprint: crypto.createHash('sha256').update(env.kdf.salt).digest('hex').slice(0, 8),
+        savedAt: env.savedAt || '',
+        device: env.device || '',
+        rev: env.rev || '',
+      };
+    } catch {
+      return null;
+    }
+  }
   isUnlocked() { return !!this.key; }
 
   async create(password, data) {
