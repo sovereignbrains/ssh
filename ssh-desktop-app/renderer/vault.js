@@ -66,7 +66,7 @@ function renderVault(){
   const open=S.vaultOpen,st=S.vaultStatus;
   $('#vaultIco').innerHTML=IC(open?'unlock':'lock');
   $('#vaultTitle').textContent=open?'Сейф открыт':'Сейф заблокирован';
-  $('#vaultSub').textContent=open?'AES-256-GCM · scrypt':(st&&!st.exists?'сейф не создан':'введите мастер-пароль');
+  $('#vaultSub').textContent=open?'AES-256-GCM · '+((S.vaultStatus&&S.vaultStatus.meta&&S.vaultStatus.meta.kdf)||'argon2id'):(st&&!st.exists?'сейф не создан':'введите мастер-пароль');
   $('#vaultDot').className='dot'+(open?'':' locked');
   $('#vaultPill').classList.toggle('locked',!open);
   $('#vaultStateTxt').textContent=open?'открыт':'заблокирован';

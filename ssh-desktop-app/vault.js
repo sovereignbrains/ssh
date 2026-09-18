@@ -1,4 +1,4 @@
-// Encrypted vault file: scrypt key derivation + AES-256-GCM.
+// Encrypted vault file: argon2id (new vaults) or scrypt (older ones) key derivation + AES-256-GCM.
 // The derived key is kept only inside an unlocked Vault instance.
 const fs = require('fs');
 const path = require('path');
@@ -7,12 +7,24 @@ const crypto = require('crypto');
 const FORMAT = 'ssh-vault';
 const VERSION = 1;
 const AAD = Buffer.from(FORMAT + '-v' + VERSION);
-const KDF_DEFAULTS = { N: 1 << 17, r: 8, p: 1 };
+// argon2id is memory-hard in a way scrypt's parameters here are not. Vaults written before it stay
+// readable — each file carries its own kdf block — and move over when the owner upgrades.
+const KDF_ARGON2 = { name: 'argon2id', m: 262144, t: 3, p: 1 };
+const newKdf = () => ({ ...KDF_ARGON2, salt: crypto.randomBytes(16).toString('base64') });
+// Two copies share a key only when the whole derivation matches, not just the salt.
+const kdfId = (k) => [k.name || 'scrypt', k.salt, k.N || '', k.r || '', k.m || '', k.t || '', k.p || ''].join(':');
 const SCRYPT_MAXMEM = 512 * 1024 * 1024;
 
-function deriveKey(password, salt, kdf) {
+async function deriveKey(password, kdf) {
+  const salt = Buffer.from(kdf.salt, 'base64');
+  const pass = String(password).normalize('NFC');
+  if (kdf.name === 'argon2id') {
+    const { argon2id } = require('hash-wasm');
+    const key = await argon2id({ password: pass, salt, parallelism: kdf.p, memorySize: kdf.m, iterations: kdf.t, hashLength: 32, outputType: 'binary' });
+    return Buffer.from(key);
+  }
   return new Promise((resolve, reject) => {
-    crypto.scrypt(String(password).normalize('NFC'), salt, 32,
+    crypto.scrypt(pass, salt, 32,
       { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: SCRYPT_MAXMEM },
       (err, key) => (err ? reject(err) : resolve(key)));
   });
@@ -43,6 +55,9 @@ function writeAtomic(file, content) {
 function checkEnvelope(env) {
   if (!env || env.format !== FORMAT || env.version !== VERSION || !env.kdf || !env.kdf.salt) {
     throw new Error('Неизвестный формат файла сейфа');
+  }
+  if (env.kdf.name && env.kdf.name !== 'scrypt' && env.kdf.name !== KDF_ARGON2.name) {
+    throw new Error('Сейф зашифрован новее этой версии приложения (' + env.kdf.name + ') — обновите клиент');
   }
   return env;
 }
@@ -85,6 +100,7 @@ class Vault {
       const env = readEnvelope(this.file);
       return {
         fingerprint: crypto.createHash('sha256').update(env.kdf.salt).digest('hex').slice(0, 8),
+        kdf: env.kdf.name || 'scrypt',
         savedAt: env.savedAt || '',
         device: env.device || '',
         rev: env.rev || '',
@@ -97,15 +113,15 @@ class Vault {
 
   async create(password, data) {
     if (this.exists()) throw new Error('Сейф уже существует');
-    const kdf = { name: 'scrypt', ...KDF_DEFAULTS, salt: crypto.randomBytes(16).toString('base64') };
-    this.key = await deriveKey(password, Buffer.from(kdf.salt, 'base64'), kdf);
+    const kdf = newKdf();
+    this.key = await deriveKey(password, kdf);
     this.kdf = kdf;
     this.save(data || {});
   }
 
   async unlock(password) {
     const env = readEnvelope(this.file);
-    const key = await deriveKey(password, Buffer.from(env.kdf.salt, 'base64'), env.kdf);
+    const key = await deriveKey(password, env.kdf);
     let plaintext;
     try {
       plaintext = decrypt(key, env);
@@ -139,7 +155,7 @@ class Vault {
   openEnvelope(env) {
     if (!this.key) throw new Error('Сейф заблокирован');
     checkEnvelope(env);
-    if (!this.kdf || env.kdf.salt !== this.kdf.salt || env.kdf.N !== this.kdf.N) {
+    if (!this.kdf || kdfId(env.kdf) !== kdfId(this.kdf)) {
       const e = new Error('Копия сейфа зашифрована другим мастер-паролем');
       e.code = 'needs-password';
       throw e;
@@ -151,7 +167,7 @@ class Vault {
   // so every computer ends up with the same key. The local file is re-encrypted on the next save.
   async adoptEnvelope(password, env) {
     checkEnvelope(env);
-    const key = await deriveKey(password, Buffer.from(env.kdf.salt, 'base64'), env.kdf);
+    const key = await deriveKey(password, env.kdf);
     let plaintext;
     try {
       plaintext = decrypt(key, env);
@@ -167,7 +183,7 @@ class Vault {
 
   async changePassword(oldPassword, newPassword) {
     const env = readEnvelope(this.file);
-    const oldKey = await deriveKey(oldPassword, Buffer.from(env.kdf.salt, 'base64'), env.kdf);
+    const oldKey = await deriveKey(oldPassword, env.kdf);
     let plaintext;
     try {
       plaintext = decrypt(oldKey, env);
@@ -176,8 +192,8 @@ class Vault {
     } finally {
       oldKey.fill(0);
     }
-    const kdf = { name: 'scrypt', ...KDF_DEFAULTS, salt: crypto.randomBytes(16).toString('base64') };
-    const newKey = await deriveKey(newPassword, Buffer.from(kdf.salt, 'base64'), kdf);
+    const kdf = newKdf();
+    const newKey = await deriveKey(newPassword, kdf);
     this.lock();
     this.key = newKey;
     this.kdf = kdf;
