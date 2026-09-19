@@ -2,6 +2,7 @@
 // App updates from GitHub Releases (electron-updater). Checks on start and every few hours,
 // downloads only when the user asks, installs on «Перезапустить» or on the next quit.
 const { autoUpdater } = require('electron-updater');
+const aegis = require('./aegis');
 
 const FIRST_CHECK_MS = 15 * 1000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
@@ -40,7 +41,11 @@ module.exports = function registerUpdater({ ipcMain, app, sendToRenderer, logErr
   autoUpdater.logger = null;
 
   autoUpdater.on('checking-for-update', () => emit({ state: 'checking', error: '' }));
-  autoUpdater.on('update-available', (info) => emit({ state: 'available', version: info.version, notes: notesText(info.releaseNotes), checkedAt: Date.now() }));
+  autoUpdater.on('update-available', (info) => {
+    // A version we already rolled back from would otherwise be offered again on the next check.
+    if (aegis.isBlocked(info.version)) { emit({ state: 'none', checkedAt: Date.now() }); return; }
+    emit({ state: 'available', version: info.version, notes: notesText(info.releaseNotes), checkedAt: Date.now() });
+  });
   autoUpdater.on('update-not-available', () => emit({ state: 'none', checkedAt: Date.now() }));
   autoUpdater.on('download-progress', (p) => emit({ state: 'downloading', percent: p.percent || 0, bytesPerSecond: p.bytesPerSecond || 0, transferred: p.transferred || 0, total: p.total || 0 }));
   autoUpdater.on('update-downloaded', (info) => emit({ state: 'downloaded', version: info.version, percent: 100 }));
@@ -85,6 +90,7 @@ module.exports = function registerUpdater({ ipcMain, app, sendToRenderer, logErr
   ipcMain.handle('update:install', async () => {
     if (state.state !== 'downloaded') return { ok: false };
     await beforeInstall();
+    aegis.archiveInstaller(state.version);
     // isSilent=false shows the installer progress; isForceRunAfter=true starts the new version.
     setImmediate(() => autoUpdater.quitAndInstall(false, true));
     return { ok: true };
@@ -95,6 +101,10 @@ module.exports = function registerUpdater({ ipcMain, app, sendToRenderer, logErr
     emit({});
     return { ok: true };
   });
+
+  // autoInstallOnAppQuit means a downloaded update also lands on a plain quit, without ever
+  // passing through update:install - archive from here too or that path leaves no way back.
+  app.on('before-quit', () => { if (state.state === 'downloaded') aegis.archiveInstaller(state.version); });
 
   const timers = [];
   if (app.isPackaged) {
