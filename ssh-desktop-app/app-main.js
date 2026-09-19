@@ -12,6 +12,8 @@ const registerSync = require('./sync');
 const registerGithub = require('./github');
 const registerNetTools = require('./nettools');
 const aegis = require('./aegis');
+const uiserver = require('./uiserver');
+let uiUrl = null;
 let syncService = null;
 let netToolsService = null;
 const pty = require('node-pty');
@@ -904,9 +906,9 @@ function createWindow() {
     show: false
   });
 
-  mainWindow.loadFile('index.html');
+  mainWindow.loadURL(uiUrl);
   // The UI is a single local page: never navigate away or open new windows (e.g. a dropped file).
-  const appPage = require('url').pathToFileURL(path.join(__dirname, 'index.html')).href;
+  const appPage = uiUrl;
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (url.split('#')[0] !== appPage) e.preventDefault();
   });
@@ -994,9 +996,10 @@ if (!primaryInstance) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!primaryInstance) return;
   Menu.setApplicationMenu(null);
+  uiUrl = (await uiserver.start(__dirname)).url;
   loadConfig();
   // Stable id of this computer: tells our own uploads apart from other computers' changes.
   if (!config.deviceId) { config.deviceId = require('crypto').randomBytes(8).toString('hex'); saveConfig(); }
