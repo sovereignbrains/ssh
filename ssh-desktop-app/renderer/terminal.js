@@ -32,7 +32,8 @@ function ensureXterm(tab){
   term.attachCustomKeyEventHandler(e=>!appShortcut(e));
   term.onData(data=>{
     if(tab.local){if(tab.ptyId&&!tab.exited)window.localAPI.write(tab.ptyId,data);}
-    else if(tab.connId&&!tab.closed)window.sshAPI.write(tab.connId,data);
+    // Typing during an agent command would mix into its output; Ctrl+C still gets through.
+    else if(tab.connId&&!tab.closed&&(!tab.agentBusy||data.includes('\x03')))window.sshAPI.write(tab.connId,data);
   });
   term.onResize(({cols,rows})=>{
     if(tab.local){if(tab.ptyId&&!tab.exited)window.localAPI.resize(tab.ptyId,cols,rows);}

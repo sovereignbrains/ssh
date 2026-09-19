@@ -308,6 +308,63 @@ function saveKnownHosts() {
 
 /* ---------------- SSH connections ---------------- */
 const connections = new Map(); // connId -> { conn, stream }
+
+/* ---- shared console: the agent types into the same shell the user is watching.
+ * The command goes into the live stream, so its echo and output land in the terminal as if typed
+ * by hand; two markers fence off the part that belongs to the agent. The marker literal is split
+ * across printf arguments, so the echoed command line never matches what we search for. */
+const termRuns = new Map(); // connId -> run state
+const ANSI_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -\/]*[@-~])|\r/g;
+
+function finishTermRun(connId, result) {
+  const run = termRuns.get(connId);
+  if (!run) return;
+  clearTimeout(run.timer);
+  termRuns.delete(connId);
+  sendToRenderer('ssh:agent-busy', { connId, busy: false });
+  run.resolve({ ...result, ms: Date.now() - run.started });
+}
+
+function feedTermRun(connId, chunk) {
+  const run = termRuns.get(connId);
+  if (!run) return;
+  run.buffer += chunk;
+  const done = run.endRe.exec(run.buffer);
+  if (!done) {
+    // Runaway output must not eat all the memory: keep the tail, the end marker arrives last.
+    if (run.buffer.length > 4 * 1024 * 1024) run.buffer = run.buffer.slice(-2 * 1024 * 1024);
+    return;
+  }
+  const begin = run.buffer.indexOf(run.beginMark);
+  const from = begin === -1 ? 0 : begin + run.beginMark.length;
+  const output = run.buffer.slice(from, done.index).replace(ANSI_RE, '').replace(/^\n+|\n+$/g, '');
+  finishTermRun(connId, { output, code: Number(done[1]), signal: null, timedOut: false });
+}
+
+function runInTerminal(connId, command, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const entry = connections.get(connId);
+    if (!entry || !entry.stream || entry.stream.destroyed) { reject(new Error('SSH-сессия не подключена')); return; }
+    if (termRuns.has(connId)) { reject(new Error('В этом терминале уже выполняется команда агента')); return; }
+    const id = crypto.randomBytes(8).toString('hex');
+    const run = {
+      beginMark: '__CC_' + id + '_B__',
+      endRe: new RegExp('__CC_' + id + '_E__ (\\d+)'),
+      buffer: '', resolve, started: Date.now(),
+    };
+    run.timer = setTimeout(() => {
+      try { entry.stream.write('\x03'); } catch (_) {}
+      finishTermRun(connId, { output: run.buffer.replace(ANSI_RE, ''), code: null, signal: null, timedOut: true });
+    }, timeoutMs);
+    termRuns.set(connId, run);
+    sendToRenderer('ssh:agent-busy', { connId, busy: true, command });
+    entry.stream.write(
+      "printf '%s%s\\n' '__CC_" + id + "' '_B__'\n" +
+      command + '\n' +
+      "printf '\\n%s%s %s\\n' '__CC_" + id + "' '_E__' \"$?\"\n"
+    );
+  });
+}
 let sftpService = null;
 let agentService = null;
 const hostKeyPrompts = new Map(); // promptId -> resolve(accept)
@@ -516,9 +573,15 @@ function registerSshHandlers() {
         conn.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (err, stream) => {
           if (err) { fail(err); return; }
           connections.set(connId, { conn, stream });
-          stream.on('data', (data) => sendToRenderer('ssh:data', { connId, data: data.toString('utf8') }));
-          stream.stderr.on('data', (data) => sendToRenderer('ssh:data', { connId, data: data.toString('utf8') }));
+          const toTerminal = (data) => {
+            const text = data.toString('utf8');
+            sendToRenderer('ssh:data', { connId, data: text });
+            feedTermRun(connId, text);
+          };
+          stream.on('data', toTerminal);
+          stream.stderr.on('data', toTerminal);
           stream.on('close', () => {
+            finishTermRun(connId, { output: '', code: null, signal: null, timedOut: false, closed: true });
             sendToRenderer('ssh:closed', { connId });
             stopTunnelsFor(connId, 'SSH-сессия закрыта');
             if (sftpService) sftpService.closeFor(connId);
@@ -613,7 +676,11 @@ function registerSshHandlers() {
 
   ipcMain.on('ssh:write', (event, { connId, data }) => {
     const entry = connections.get(connId);
-    if (entry && entry.stream && !entry.stream.destroyed) entry.stream.write(data);
+    if (!entry || !entry.stream || entry.stream.destroyed) return;
+    // While the agent's command is running, typing would mix into its output: only Ctrl+C passes,
+    // so the user can always interrupt what the agent started.
+    if (termRuns.has(connId) && !String(data).includes('\x03')) return;
+    entry.stream.write(data);
   });
 
   ipcMain.on('ssh:resize', (event, { connId, cols, rows }) => {
@@ -1025,7 +1092,7 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
   });
   agentService = registerAgent({
-    ipcMain, app, sendToRenderer, logError, sftp: sftpService,
+    ipcMain, app, sendToRenderer, logError, sftp: sftpService, runInTerminal,
     getConnection: (connId) => connections.get(connId),
   });
   syncService = registerSync({

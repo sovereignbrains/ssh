@@ -62,6 +62,18 @@ const connIdToTab={};
 // The shell starts talking (banner, MOTD, prompt) before the tab exists; hold that output until it does.
 const earlyData={};
 function takeEarlyData(connId){const d=earlyData[connId];delete earlyData[connId];return d?d.chunks.join(''):'';}
+// While the agent runs a command in this shell, its fence markers are cut out line by line: the user
+// should see the command and its output, not the bookkeeping around them. Buffering only kicks in
+// during an agent command, so interactive programs are never held back.
+function writeTerm(tab,st,data){
+  if(!tab.agentBusy){if(tab.mbuf){st.term.write(tab.mbuf);tab.mbuf='';}st.term.write(data);return;}
+  const buf=(tab.mbuf||'')+data;
+  const cut=buf.lastIndexOf('\n');
+  if(cut===-1){tab.mbuf=buf;return;}
+  tab.mbuf=buf.slice(cut+1);
+  const shown=buf.slice(0,cut+1).split('\n').filter(l=>!l.includes('__CC_')).join('\n');
+  if(shown)st.term.write(shown);
+}
 if(window.sshAPI){
   window.sshAPI.onData((p)=>{
     const tab=connIdToTab[p.connId];
@@ -71,7 +83,15 @@ if(window.sshAPI){
       return;
     }
     const st=xtermState[tab.id];
-    if(st)st.term.write(p.data);
+    if(st)writeTerm(tab,st,p.data);
+  });
+  window.sshAPI.onAgentBusy&&window.sshAPI.onAgentBusy((p)=>{
+    const tab=connIdToTab[p.connId];if(!tab)return;
+    tab.agentBusy=!!p.busy;
+    const st=xtermState[tab.id];
+    if(p.busy){if(st)st.term.write('\r\n\x1b[38;5;43m▸ Claude\x1b[0m\r\n');}
+    else{if(st&&tab.mbuf&&!tab.mbuf.includes('__CC_'))st.term.write(tab.mbuf);tab.mbuf='';}
+    refreshTab(tab);
   });
   window.sshAPI.onClosed((p)=>{
     const tab=connIdToTab[p.connId];if(!tab){delete earlyData[p.connId];return;}

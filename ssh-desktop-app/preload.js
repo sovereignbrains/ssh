@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('sshAPI', {
   onLog: (cb) => ipcRenderer.on('ssh:log', (event, payload) => cb(payload)),
   onData: (cb) => ipcRenderer.on('ssh:data', (event, payload) => cb(payload)),
   onClosed: (cb) => ipcRenderer.on('ssh:closed', (event, payload) => cb(payload)),
+  onAgentBusy: (cb) => ipcRenderer.on('ssh:agent-busy', (event, payload) => cb(payload)),
   onHostKeyPrompt: (cb) => ipcRenderer.on('ssh:host-key-prompt', (event, payload) => cb(payload)),
   onOsDetected: (cb) => ipcRenderer.on('ssh:os', (event, payload) => cb(payload)),
 });

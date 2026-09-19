@@ -29,6 +29,7 @@ const SYSTEM_APPEND = [
   'You are running inside an SSH client and operate on a remote server over SSH, not on the local computer.',
   'Local file and shell tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.',
   'Paths are paths on the remote server. Every run_command, write_file and edit_file call is shown to the user for approval, so keep commands focused and explain briefly why you run them.',
+  "Your commands run in the very shell the user is watching, so they see each one typed out and its output live. The session state is shared: a cd you run stays in effect for them too, and they can pick up right where you stopped. Commands that carry a secret are the exception — those run on a separate channel, off screen.",
   'Prefer non-interactive commands (no pagers, no editors, add -y only when the user asked for changes). Reply in the language the user writes in.',
 ].join('\n');
 
@@ -80,7 +81,7 @@ function adapterEntry() {
   return path.join(__dirname, 'node_modules', '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js');
 }
 
-module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConnection, sftp, logError }) {
+module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConnection, sftp, runInTerminal, logError }) {
   const chats = new Map(); // chatId -> chat state
   const tokens = new Map(); // bearer token -> chatId
   const approvals = new Map(); // approvalId -> resolve(allow, always)
@@ -333,7 +334,10 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
         ? await execLocal(fill(command), cwd ? localResolve(cwd) : null, limit, Object.fromEntries(sec.values))
         : sec.values.size
           ? await execRemote(conn(), 'sh -s', limit, remoteScript(sec.values, fill(full)))
-          : await execRemote(conn(), full, limit);
+          // No secret in play: run it in the shell the user is watching, so the command and its
+          // output appear in their terminal. A cwd stays scoped to a subshell — an explicit cd in
+          // the command itself is meant to stick, the tool's cwd argument is not.
+          : await runInTerminal(conn(), cwd ? '(cd ' + cdTarget + ' && ' + command + ')' : command, limit);
       const status = r.timedOut ? 'timed out after ' + (timeout_seconds || 120) + 's' : 'exit code ' + (r.code === null ? '?' : r.code) + (r.signal ? ', signal ' + r.signal : '');
       sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: status + (sec.names.length ? ' · секреты: ' + sec.names.join(', ') : '') });
       return text('[' + status + ', ' + r.ms + ' ms]\n' + clip(r.output, OUTPUT_LIMIT), r.timedOut || (r.code !== 0 && r.code !== null));
