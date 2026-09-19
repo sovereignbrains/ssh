@@ -428,6 +428,10 @@
                     <div class="srow-t"><b>Резервная копия</b><small>Файл сейфа в выбранную папку; открывается тем же мастер-паролем.</small></div>
                     <div class="srow-c"><button class="btn" id="btnBackup"><svg class="ic"><use href="#ic-save"/></svg> Сохранить копию…</button></div>
                   </div>
+                  <div class="srow" id="helloRow" hidden>
+                    <div class="srow-t"><b>Вход по Windows Hello</b><small id="helloHint">Открывать сейф PIN-кодом или отпечатком вместо мастер-пароля.</small></div>
+                    <div class="srow-c"><button class="btn" id="btnHelloToggle"><svg class="ic"><use href="#ic-shield"/></svg> Настроить</button></div>
+                  </div>
                 </div>
               </section>
 
@@ -595,6 +599,7 @@
     <div id="lockFields" style="display:flex;flex-direction:column;gap:9px;text-align:left"></div>
     <div id="lockNote" class="lock-note"></div>
     <button class="btn primary" id="btnUnlock" style="width:100%;justify-content:center;margin-top:12px"><svg class="ic"><use href="#ic-unlock"/></svg> Разблокировать</button>
+    <button class="btn ghost sm" id="btnHelloUnlock" hidden style="width:100%;justify-content:center;margin-top:9px"><svg class="ic"><use href="#ic-shield"/></svg> Войти по Windows Hello</button>
     <button class="btn ghost sm" id="btnLockAlt" style="width:100%;justify-content:center;margin-top:9px"></button>
     <button class="btn ghost sm" id="btnLockRestore" hidden style="width:100%;justify-content:center;margin-top:9px"><svg class="glogo"><use href="#logo-google"/></svg> Восстановить из Google Диска</button>
   </div>
@@ -620,6 +625,7 @@
 <script src="renderer/settings.js"></script>
 <script src="renderer/updates.js"></script>
 <script src="renderer/sync.js"></script>
+<script src="renderer/hello.js"></script>
 <script src="renderer/init.js"></script>
 </body>
 </html>

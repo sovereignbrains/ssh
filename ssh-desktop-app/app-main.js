@@ -13,6 +13,7 @@ const registerGithub = require('./github');
 const registerNetTools = require('./nettools');
 const aegis = require('./aegis');
 const uiserver = require('./uiserver');
+const registerHello = require('./hello');
 let uiUrl = null;
 let syncService = null;
 let netToolsService = null;
@@ -122,6 +123,8 @@ function registerVaultHandlers() {
   ipcMain.handle('vault:change-password', wrap(async ({ oldPassword, newPassword }) => {
     if (!newPassword || newPassword.length < 8) throw new Error('Новый пароль: минимум 8 символов');
     await vault.changePassword(oldPassword || '', newPassword);
+    // The vault key just changed, so the copy Windows Hello wrapped opens nothing any more.
+    if (config.hello) { delete config.hello; saveConfig(); }
     return {};
   }));
 
@@ -1006,6 +1009,12 @@ app.whenReady().then(async () => {
   vault = new Vault(path.join(dataDir(), VAULT_NAME), config.deviceId);
   loadKnownHosts();
   registerVaultHandlers();
+  registerHello({
+    ipcMain, vaultStatus, saveConfig,
+    getVault: () => vault,
+    getConfig: () => config,
+    onUnlock: () => { if (syncService) syncService.onUnlock(); },
+  });
   registerSshHandlers();
   registerTunnelHandlers();
   registerLocalShellHandlers();

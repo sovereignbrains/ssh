@@ -64,6 +64,7 @@ function flushPersist(){
 
 function renderVault(){
   const open=S.vaultOpen,st=S.vaultStatus;
+  if(typeof renderHelloUnlock==='function')renderHelloUnlock();
   $('#vaultIco').innerHTML=IC(open?'unlock':'lock');
   $('#vaultTitle').textContent=open?'Сейф открыт':'Сейф заблокирован';
   $('#vaultSub').textContent=open?'AES-256-GCM · '+((S.vaultStatus&&S.vaultStatus.meta&&S.vaultStatus.meta.kdf)||'argon2id'):(st&&!st.exists?'сейф не создан':'введите мастер-пароль');
@@ -142,6 +143,7 @@ async function refreshVaultStatus(){
   const r=await window.vaultAPI.status();
   if(r.ok){S.vaultStatus=r;S.store=r.store;S.dataDir=r.dataDir;}
   renderSettings();renderVault();
+  if(typeof helloRefresh==='function')helloRefresh();
 }
 async function lockPrimary(){
   const st=S.vaultStatus||{};

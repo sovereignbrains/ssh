@@ -135,6 +135,29 @@ class Vault {
     return JSON.parse(plaintext);
   }
 
+  // Unlock with a key produced elsewhere - Windows Hello keeps a wrapped copy of this very key.
+  // The file carries no trace of how the key was obtained, so this is exactly the password path
+  // minus the derivation.
+  unlockWithKey(key) {
+    const env = readEnvelope(this.file);
+    let plaintext;
+    try {
+      plaintext = decrypt(key, env);
+    } catch {
+      throw new Error('Сохранённый ключ не подходит к этому сейфу');
+    }
+    this.key = Buffer.from(key);
+    this.kdf = env.kdf;
+    this.lastRev = env.rev || null;
+    return JSON.parse(plaintext);
+  }
+
+  // A copy of the live key, so a second factor can wrap it. Only while unlocked.
+  exportKey() {
+    if (!this.key) throw new Error('Сейф заблокирован');
+    return Buffer.from(this.key);
+  }
+
   save(data) {
     if (!this.key) throw new Error('Сейф заблокирован');
     const rev = crypto.randomBytes(9).toString('hex');

@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('sshAPI', {
   onOsDetected: (cb) => ipcRenderer.on('ssh:os', (event, payload) => cb(payload)),
 });
 
+contextBridge.exposeInMainWorld('helloAPI', {
+  state: () => ipcRenderer.invoke('hello:state'),
+  enable: (credentialId, prf, salt) => ipcRenderer.invoke('hello:enable', { credentialId, prf, salt }),
+  unlock: (prf) => ipcRenderer.invoke('hello:unlock', { prf }),
+  disable: () => ipcRenderer.invoke('hello:disable'),
+});
+
 contextBridge.exposeInMainWorld('vaultAPI', {
   status: () => ipcRenderer.invoke('vault:status'),
   create: (password) => ipcRenderer.invoke('vault:create', { password }),
