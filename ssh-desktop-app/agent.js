@@ -590,7 +590,10 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const chat = chats.get(chatId);
     if (!chat || !chat.ctx || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
     try {
-      await chat.ctx.request(chat.acp.methods.agent.session.setConfigOption, { sessionId: chat.session.sessionId, configId, value });
+      const resp = await chat.ctx.request(chat.acp.methods.agent.session.setConfigOption, { sessionId: chat.session.sessionId, configId, value });
+      // The adapter answers with the refreshed options and sends no config_option_update,
+      // so mirror them back or the picker keeps showing the previous value.
+      if (resp && resp.configOptions) sendToRenderer('agent:update', { chatId: chat.chatId, update: { sessionUpdate: 'config_option_update', configOptions: resp.configOptions } });
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e && e.message) || String(e) };
