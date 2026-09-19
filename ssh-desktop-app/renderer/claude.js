@@ -35,7 +35,17 @@ function clHydrate(connId){
     if(CL.open)renderClaude();
   });
 }
-const CL_MAX_IMG=8,CL_MAX_DIM=1568;
+const CL_MAX_IMG=8,CL_MAX_DIM=1568,CL_MAX_TEXT_BYTES=256*1024;
+const CL_TEXT_EXT=/\.(txt|md|markdown|json|jsonc|ya?ml|toml|ini|conf|cfg|log|csv|tsv|xml|html?|css|scss|less|jsx?|mjs|cjs|tsx?|py|rb|go|rs|java|kt|c|h|cpp|hpp|cs|php|sh|bash|zsh|ps1|sql|env|gitignore|dockerfile)$/i;
+function clIsTextFile(f){return f.type.startsWith('text/')||f.type==='application/json'||CL_TEXT_EXT.test(f.name);}
+function clReadTextFile(file){
+  return new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onerror=()=>reject(fr.error||new Error('read failed'));
+    fr.onload=()=>resolve({id:uid('att'),kind:'text',name:file.name,mimeType:file.type||'text/plain',text:String(fr.result)});
+    fr.readAsText(file);
+  });
+}
 function clAttachList(connId){connId=connId||CL.connId;return CL.attach[connId]||(CL.attach[connId]=[]);}
 function clReadImageFile(file){
   return new Promise((resolve,reject)=>{
@@ -51,7 +61,7 @@ function clReadImageFile(file){
         canvas.getContext('2d').drawImage(img,0,0,w,h);
         const mime=scale<1||file.type!=='image/png'?'image/jpeg':'image/png';
         const dataUrl=canvas.toDataURL(mime,0.88);
-        resolve({id:uid('att'),mimeType:mime,dataUrl,data:dataUrl.slice(dataUrl.indexOf(',')+1)});
+        resolve({id:uid('att'),kind:'image',mimeType:mime,dataUrl,data:dataUrl.slice(dataUrl.indexOf(',')+1)});
       };
       img.onerror=()=>reject(new Error('bad image'));
       img.src=fr.result;
@@ -61,13 +71,24 @@ function clReadImageFile(file){
 }
 async function clAddFiles(files){
   const list=clAttachList();
-  const imgs=Array.from(files).filter(f=>f&&f.type.startsWith('image/'));
-  if(!imgs.length)return;
-  const room=CL_MAX_IMG-list.length;
-  if(room<=0){toast('Не больше '+CL_MAX_IMG+' изображений в одном сообщении','warn','Claude');return;}
-  if(imgs.length>room)toast('Добавлены первые '+room+' — лимит '+CL_MAX_IMG+' изображений','warn','Claude');
-  for(const f of imgs.slice(0,room)){
-    try{list.push(await clReadImageFile(f));}catch(e){toast('Не удалось прочитать изображение','err','Claude');}
+  const arr=Array.from(files||[]).filter(Boolean);
+  const imgs=arr.filter(f=>f.type.startsWith('image/'));
+  const texts=arr.filter(f=>!f.type.startsWith('image/')&&clIsTextFile(f));
+  const rejected=arr.filter(f=>!imgs.includes(f)&&!texts.includes(f));
+  if(rejected.length)toast('Не поддерживается (только изображения и текстовые файлы): '+rejected.map(f=>f.name).join(', '),'warn','Claude');
+  if(imgs.length){
+    const room=CL_MAX_IMG-list.filter(a=>a.kind==='image').length;
+    if(room<=0)toast('Не больше '+CL_MAX_IMG+' изображений в одном сообщении','warn','Claude');
+    else{
+      if(imgs.length>room)toast('Добавлены первые '+room+' — лимит '+CL_MAX_IMG+' изображений','warn','Claude');
+      for(const f of imgs.slice(0,room)){
+        try{list.push(await clReadImageFile(f));}catch(e){toast('Не удалось прочитать изображение','err','Claude');}
+      }
+    }
+  }
+  for(const f of texts){
+    if(f.size>CL_MAX_TEXT_BYTES){toast('Файл «'+f.name+'» больше 256 КБ — пропущен','warn','Claude');continue;}
+    try{list.push(await clReadTextFile(f));}catch(e){toast('Не удалось прочитать «'+f.name+'»','err','Claude');}
   }
   clRenderAttach();clSyncSend();
 }
@@ -75,11 +96,15 @@ function clRenderAttach(){
   const box=$('#clAttach');if(!box)return;
   const list=clAttachList();
   box.hidden=!list.length;
-  box.innerHTML=list.map(a=>'<span class="cl-att-chip"><img src="'+a.dataUrl+'" alt=""><button type="button" data-att="'+a.id+'" title="Убрать">'+IC('x')+'</button></span>').join('');
+  box.innerHTML=list.map(a=>a.kind==='text'
+    ?'<span class="cl-att-chip cl-att-file" title="'+esc(a.name)+'">'+IC('file')+'<b>'+esc(a.name.length>16?a.name.slice(0,14)+'…':a.name)+'</b><button type="button" data-att="'+a.id+'" title="Убрать">'+IC('x')+'</button></span>'
+    :'<span class="cl-att-chip"><img src="'+a.dataUrl+'" alt=""><button type="button" data-att="'+a.id+'" title="Убрать">'+IC('x')+'</button></span>').join('');
 }
 function clBuildContent(text,atts){
   if(!atts.length)return text;
-  const blocks=atts.map(a=>({type:'image',data:a.data,mimeType:a.mimeType}));
+  const blocks=atts.map(a=>a.kind==='text'
+    ?{type:'resource',resource:{uri:'attachment:///'+encodeURIComponent(a.name),mimeType:a.mimeType,text:a.text}}
+    :{type:'image',data:a.data,mimeType:a.mimeType});
   if(text)blocks.push({type:'text',text:text});
   return blocks;
 }
@@ -131,9 +156,10 @@ function updateClaudeBadge(){
   $('#clFab').classList.toggle('attn',n>0&&!CL.open);
   $('#clFab').classList.toggle('busy',busy);
 }
+function clCopyBtn(text){return text?'<button type="button" class="cl-copy" data-copy="'+esc(text)+'" title="Копировать текст">'+IC('copy')+'</button>':'';}
 function clItemHtml(it){
-  if(it.kind==='user')return '<div class="cl-msg user">'+(it.attachments&&it.attachments.length?'<div class="cl-msg-imgs">'+it.attachments.map(a=>'<img src="'+a.dataUrl+'" alt="">').join('')+'</div>':'')+(it.text?clMd(it.text):'')+'</div>';
-  if(it.kind==='agent')return '<div class="cl-msg agent">'+clMd(it.text)+'</div>';
+  if(it.kind==='user')return '<div class="cl-msg user">'+(it.attachments&&it.attachments.length?'<div class="cl-msg-imgs">'+it.attachments.map(a=>'<img src="'+a.dataUrl+'" alt="">').join('')+'</div>':'')+(it.text?clMd(it.text):'')+clCopyBtn(it.text)+'</div>';
+  if(it.kind==='agent')return '<div class="cl-msg agent">'+clMd(it.text)+clCopyBtn(it.text)+'</div>';
   if(it.kind==='thought')return '<details class="cl-thought"><summary>'+IC('sparkles')+' Размышления</summary><div>'+clMd(it.text)+'</div></details>';
   if(it.kind==='info')return '<div class="cl-info'+(it.error?' err':'')+'">'+IC(it.error?'alert':'info')+' '+esc(it.text)+'</div>';
   if(it.kind==='plan')return '<div class="cl-card"><div class="cl-card-h">'+IC('check-c')+' План</div><ul class="cl-plan">'+
@@ -329,14 +355,14 @@ function renderClaude(){
     '<div class="cl-strip" id="clStrip"></div>'+
     '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
       '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
-      '<input type="file" id="clFile" accept="image/*" multiple hidden>'+
+      '<input type="file" id="clFile" accept="image/*,text/*,.md,.json,.yml,.yaml,.toml,.ini,.conf,.cfg,.log,.csv,.tsv,.xml,.css,.scss,.less,.js,.mjs,.cjs,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.hpp,.cs,.php,.sh,.bash,.ps1,.sql,.env" multiple hidden>'+
       '<div class="cl-tools">'+
-        '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение">'+IC('image')+'</button>'+
+        '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение или текстовый файл">'+IC('file')+'</button>'+
         '<span class="cl-config-row" id="clConfigRow"></span>'+
         '<span style="flex:1"></span>'+
         '<button class="cl-send" id="clSend"></button>'+
       '</div></div>'+
-      '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span><span>вставьте или перетащите скриншот</span></div>'+
+      '<div class="cl-hint"><span><span class="kbd">Enter</span> отправить</span><span><span class="kbd">Shift+Enter</span> новая строка</span><span>вставьте скриншот или перетащите файл</span></div>'+
     '</div>'+
   '</div>';
   const ta=$('#clText');
@@ -357,7 +383,7 @@ function renderClaude(){
   clBox.ondragleave=()=>clBox.classList.remove('drag');
   clBox.ondrop=e=>{
     e.preventDefault();clBox.classList.remove('drag');
-    const files=Array.from(e.dataTransfer.files||[]).filter(f=>f.type.startsWith('image/'));
+    const files=Array.from(e.dataTransfer.files||[]);
     if(files.length)clAddFiles(files);
   };
   $('#clConfigRow').onclick=e=>{
@@ -406,6 +432,8 @@ function renderClaude(){
     CL.stick=true;log.scrollTop=log.scrollHeight;clQueueRender();
   };
   log.onclick=e=>{
+    const cp=e.target.closest('.cl-copy');
+    if(cp){navigator.clipboard&&navigator.clipboard.writeText(cp.dataset.copy).catch(()=>{});toast('Скопировано','ok','Claude');return;}
     const img=e.target.closest('.cl-msg-imgs img');
     if(img){clOpenLightbox(img.src);return;}
     const a=e.target.closest('[data-allow]');
@@ -556,9 +584,63 @@ $('#clCfgMenu').onclick=e=>{
   window.agentAPI.setConfigOption(chat.chatId,configId,b.dataset.value).then(r=>{if(!r.ok)toast(r.error,'err','Claude');});
 };
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clCfgMenu,.cl-pill'))closeClCfgMenu();});
+/* ---- custom right-click menu, scoped to the chat panel only ---- */
+async function clCtxPaste(){
+  const ta=$('#clText');
+  try{
+    const t=await navigator.clipboard.readText();
+    const s=ta.selectionStart,en=ta.selectionEnd;
+    ta.focus();ta.setRangeText(t,s,en,'end');
+    ta.dispatchEvent(new Event('input',{bubbles:true}));
+  }catch(err){ta.focus();document.execCommand('paste');}
+}
+function clCtxItems(e){
+  const ta=$('#clText'),inTextarea=e.target===ta;
+  const sel=inTextarea?ta.value.slice(ta.selectionStart,ta.selectionEnd):String(window.getSelection());
+  const msg=e.target.closest('.cl-msg');
+  const items=[];
+  if(inTextarea){
+    if(sel)items.push({label:'Вырезать',ic:'eraser',run:()=>document.execCommand('cut')});
+    if(sel)items.push({label:'Копировать',ic:'copy',run:()=>document.execCommand('copy')});
+    items.push({label:'Вставить',ic:'download',run:clCtxPaste});
+    items.push({sep:true});
+    items.push({label:'Выделить всё',ic:'check',run:()=>ta.select()});
+  }else if(sel){
+    items.push({label:'Копировать',ic:'copy',run:()=>{navigator.clipboard&&navigator.clipboard.writeText(sel).catch(()=>{});}});
+  }
+  if(msg&&msg.querySelector('.cl-copy')){
+    if(items.length)items.push({sep:true});
+    items.push({label:'Скопировать сообщение',ic:'copy',run:()=>{const b=msg.querySelector('.cl-copy');if(b)b.click();}});
+  }
+  if(items.length)items.push({sep:true});
+  items.push({label:'Прикрепить файл',ic:'file',run:()=>$('#clFile').click()});
+  return items;
+}
+function closeClCtxMenu(){const m=$('#clCtxMenu');if(m)m.hidden=true;}
+function openClCtxMenu(e){
+  if(!CL.open)return;
+  e.preventDefault();
+  closeClMenu();closeClCfgMenu();
+  const m=$('#clCtxMenu'),items=clCtxItems(e);
+  m.innerHTML=items.map((it,i)=>it.sep?'<div class="cl-ctx-sep"></div>':'<button type="button" class="cl-ctx-item" data-i="'+i+'"'+(it.disabled?' disabled':'')+'>'+IC(it.ic)+'<span>'+esc(it.label)+'</span></button>').join('');
+  m._items=items;
+  m.hidden=false;
+  const pop=$('#clPop').getBoundingClientRect();
+  const x=Math.max(8,Math.min(e.clientX-pop.left,pop.width-m.offsetWidth-8));
+  const y=Math.max(8,Math.min(e.clientY-pop.top,pop.height-8-m.offsetHeight));
+  m.style.left=x+'px';m.style.top=y+'px';
+}
+$('#clPop').addEventListener('contextmenu',openClCtxMenu);
+$('#clCtxMenu').onclick=e=>{
+  const b=e.target.closest('.cl-ctx-item');if(!b||b.disabled)return;
+  const it=$('#clCtxMenu')._items[+b.dataset.i];
+  closeClCtxMenu();
+  if(it)it.run();
+};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clCtxMenu'))closeClCtxMenu();});
 $('#clBig').onclick=()=>setClaudeBig(!CL.big);
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&CL.open&&!modalStack.length&&e.target.closest&&e.target.closest('#clPop')){e.preventDefault();if(!$('#clCfgMenu').hidden)closeClCfgMenu();else if(!$('#clMenu').hidden)closeClMenu();else closeClaude();}
+  if(e.key==='Escape'&&CL.open&&!modalStack.length&&e.target.closest&&e.target.closest('#clPop')){e.preventDefault();if(!$('#clCtxMenu').hidden)closeClCtxMenu();else if(!$('#clCfgMenu').hidden)closeClCfgMenu();else if(!$('#clMenu').hidden)closeClMenu();else closeClaude();}
 });
 if(window.agentAPI){
   window.agentAPI.onStatus(p=>{
