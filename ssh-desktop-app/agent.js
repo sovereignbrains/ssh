@@ -22,6 +22,7 @@ const SYSTEM_APPEND_LOCAL = [
   'You are running inside an SSH client, but this chat targets the local computer it runs on, not a remote server.',
   "Claude Code's own local tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.",
   'Paths are paths on this computer; relative paths resolve against the working directory shown above. Every run_command, write_file and edit_file call is shown to the user for approval, so keep commands focused and explain briefly why you run them.',
+  "When an SSH session is connected, run_command accepts `on`: pass that session's user@host and the command runs there instead, in the terminal the user is watching. A task spanning this computer and a server stays in one conversation — never ask the user to switch chats for it. File tools stay local; read and write remote files with commands.",
   'Prefer non-interactive commands. Reply in the language the user writes in.',
 ].join('\n');
 
@@ -81,7 +82,7 @@ function adapterEntry() {
   return path.join(__dirname, 'node_modules', '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js');
 }
 
-module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConnection, sftp, runInTerminal, logError }) {
+module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConnection, sftp, runInTerminal, listTargets, logError }) {
   const chats = new Map(); // chatId -> chat state
   const tokens = new Map(); // bearer token -> chatId
   const approvals = new Map(); // approvalId -> resolve(allow, always)
@@ -301,6 +302,24 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const remoteScript = (values, command) =>
       [...values].map(([name, value]) => name + '=' + shQuote(value) + '; export ' + name).join('\n') + '\n' + command + '\n';
     const conn = () => chat.connId;
+    // A command from the local chat can be aimed at an open SSH session, so one conversation covers
+    // both machines — and the user watches it run in that server's own terminal.
+    const targets = () => (chat.local && listTargets ? listTargets() : []);
+    const targetHelp = () => {
+      if (!chat.local) return '';
+      const list = targets();
+      return list.length
+        ? ' Connected SSH sessions you can aim at with `on`: ' + list.map((t) => t.label).join(', ') + '. Without `on` the command runs on this computer. The user watches it run in that session\'s terminal.'
+        : ' No SSH session is connected, so commands run on this computer. If the user wants work done on a server, ask them to connect that session first.';
+    };
+    const resolveTarget = (name) => {
+      const list = targets();
+      const want = String(name).trim().toLowerCase();
+      return list.find((t) => t.label.toLowerCase() === want)
+        || list.find((t) => t.label.toLowerCase().includes(want))
+        || list.find((t) => t.connId === name)
+        || null;
+    };
     // SFTP does not expand ~, the shell does: resolve it against the SFTP home directory.
     const remotePath = async (p) => {
       if (p === '~' || p.startsWith('~/')) return (await sftp.home(conn())).replace(/\/+$/, '') + p.slice(1);
@@ -311,35 +330,50 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     };
 
     server.registerTool('run_command', {
-      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.' + secretHelp(),
+      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.' + targetHelp() + secretHelp(),
       inputSchema: {
         command: z.string().describe('Shell command to run'),
         cwd: z.string().optional().describe(chat.local ? 'Working directory on this computer' : 'Remote working directory'),
         timeout_seconds: z.number().int().min(1).max(900).optional().describe('Kill the command after this many seconds (default 120)'),
         env_secrets: z.array(z.string()).optional().describe('Names of secrets to pass to the command as environment variables. The app fills in the values; they are never shown to you.'),
+        ...(chat.local ? { on: z.string().optional().describe('Run on a connected SSH session instead of this computer: pass its user@host as listed in this description.') } : {}),
       },
-    }, ({ command, cwd, timeout_seconds, env_secrets }) => guard(async () => {
+    }, ({ command, cwd, timeout_seconds, env_secrets, on }) => guard(async () => {
+      const target = on ? resolveTarget(on) : null;
+      if (on && !target) {
+        const open = targets().map((t) => t.label).join(', ');
+        return text('Сессия «' + on + '» не подключена.' + (open ? ' Открыты: ' + open + '.' : ' Ни одна SSH-сессия не подключена.'), true);
+      }
       const sec = collectSecrets(chat, command, env_secrets);
       if (sec.errors.length) return text('Команда не выполнена: ' + sec.errors.join('; ') + '.', true);
       const cdTarget = !cwd ? '' : cwd === '~' ? '~' : cwd.startsWith('~/') ? '"$HOME"/' + shQuote(cwd.slice(2)) : shQuote(cwd);
       const full = cwd ? 'cd ' + cdTarget + ' && ' + command : command;
       // A separate tool key for secret calls: «always allow» for plain commands must not silently
       // extend to commands that carry a key.
-      const ok = await askApproval(chat, sec.names.length ? 'run_command_secret' : 'run_command', command,
-        [cwd ? 'в папке ' + cwd : '', sec.names.length ? 'секреты: ' + sec.names.join(', ') : ''].filter(Boolean).join(' · '));
+      // Отдельный ключ для чужой машины: «всегда разрешать» локальные команды не должно
+      // молча распространяться на команды, уходящие на сервер.
+      const approvalKey = (target ? 'run_command_remote' : 'run_command') + (sec.names.length ? '_secret' : '');
+      const ok = await askApproval(chat, approvalKey, command,
+        [target ? 'на сервере ' + target.label : '', cwd ? 'в папке ' + cwd : '', sec.names.length ? 'секреты: ' + sec.names.join(', ') : ''].filter(Boolean).join(' · '));
       if (!ok) return text('Пользователь отклонил выполнение команды.', true);
       const limit = (timeout_seconds || 120) * 1000;
       const fill = (s) => s.replace(SECRET_RE, (m, name) => (sec.values.has(name) ? sec.values.get(name) : m));
-      const r = chat.local
+      const remoteCommand = cwd ? '(cd ' + cdTarget + ' && ' + command + ')' : command;
+      const r = target
+        // Секреты не пускаем в общий терминал: значение осело бы на экране и в истории shell.
+        ? (sec.values.size
+            ? await execRemote(target.connId, 'sh -s', limit, remoteScript(sec.values, fill(full)))
+            : await runInTerminal(target.connId, remoteCommand, limit))
+        : chat.local
         ? await execLocal(fill(command), cwd ? localResolve(cwd) : null, limit, Object.fromEntries(sec.values))
         : sec.values.size
           ? await execRemote(conn(), 'sh -s', limit, remoteScript(sec.values, fill(full)))
           // No secret in play: run it in the shell the user is watching, so the command and its
           // output appear in their terminal. A cwd stays scoped to a subshell — an explicit cd in
           // the command itself is meant to stick, the tool's cwd argument is not.
-          : await runInTerminal(conn(), cwd ? '(cd ' + cdTarget + ' && ' + command + ')' : command, limit);
+          : await runInTerminal(conn(), remoteCommand, limit);
       const status = r.timedOut ? 'timed out after ' + (timeout_seconds || 120) + 's' : 'exit code ' + (r.code === null ? '?' : r.code) + (r.signal ? ', signal ' + r.signal : '');
-      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: status + (sec.names.length ? ' · секреты: ' + sec.names.join(', ') : '') });
+      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: (target ? target.label + ' · ' : '') + status + (sec.names.length ? ' · секреты: ' + sec.names.join(', ') : '') });
       return text('[' + status + ', ' + r.ms + ' ms]\n' + clip(r.output, OUTPUT_LIMIT), r.timedOut || (r.code !== 0 && r.code !== null));
     }));
 

@@ -341,6 +341,11 @@ function feedTermRun(connId, chunk) {
   finishTermRun(connId, { output, code: Number(done[1]), signal: null, timedOut: false });
 }
 
+// Open SSH sessions the local chat may send a command to, so one conversation covers both machines.
+function listTargets() {
+  return [...connections.entries()].map(([connId, e]) => ({ connId, label: e.label || connId }));
+}
+
 function runInTerminal(connId, command, timeoutMs) {
   return new Promise((resolve, reject) => {
     const entry = connections.get(connId);
@@ -572,7 +577,7 @@ function registerSshHandlers() {
         progress(4, 'active');
         conn.shell({ term: 'xterm-256color', cols: 80, rows: 24 }, (err, stream) => {
           if (err) { fail(err); return; }
-          connections.set(connId, { conn, stream });
+          connections.set(connId, { conn, stream, label: username + '@' + host });
           const toTerminal = (data) => {
             const text = data.toString('utf8');
             sendToRenderer('ssh:data', { connId, data: text });
@@ -1092,7 +1097,7 @@ app.whenReady().then(async () => {
     getWindow: () => mainWindow,
   });
   agentService = registerAgent({
-    ipcMain, app, sendToRenderer, logError, sftp: sftpService, runInTerminal,
+    ipcMain, app, sendToRenderer, logError, sftp: sftpService, runInTerminal, listTargets,
     getConnection: (connId) => connections.get(connId),
   });
   syncService = registerSync({
