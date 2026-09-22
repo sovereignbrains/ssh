@@ -31,6 +31,7 @@ function ensureXterm(tab){
   term.open(wrap);
   term.attachCustomKeyEventHandler(e=>!appShortcut(e));
   term.onData(data=>{
+    term.scrollToBottom();
     if(tab.local){if(tab.ptyId&&!tab.exited)window.localAPI.write(tab.ptyId,data);}
     // Typing during an agent command would mix into its output; Ctrl+C still gets through.
     else if(tab.connId&&!tab.closed&&(!tab.agentBusy||data.includes('\x03')))window.sshAPI.write(tab.connId,data);
@@ -39,6 +40,8 @@ function ensureXterm(tab){
     if(tab.local){if(tab.ptyId&&!tab.exited)window.localAPI.resize(tab.ptyId,cols,rows);}
     else if(tab.connId&&!tab.closed)window.sshAPI.resize(tab.connId,cols,rows);
   });
+  wrap.addEventListener('contextmenu',e=>{e.preventDefault();openTermMenu(e.clientX,e.clientY,tab);});
+  wrap.addEventListener('mousedown',e=>{if(e.button===1)startAutoscroll(e,tab);});
   term.textarea&&term.textarea.addEventListener('focus',()=>focusPane(tab.id,true));
   xtermPool.appendChild(wrap);
   const st={term,fit,wrap};
@@ -154,6 +157,68 @@ window.openLocalShell=k=>{
 };
 $('#btnTestShell').onclick=()=>localShell();
 
+/* ---- middle-click autoscroll: hold the wheel button, move the mouse to scroll ---- */
+function startAutoscroll(e,tab){
+  const st=xtermState[tab.id];if(!st)return;
+  e.preventDefault();e.stopPropagation();
+  const originY=e.clientY;let curY=originY;
+  const dot=document.createElement('div');dot.className='term-autoscroll';
+  dot.style.left=e.clientX+'px';dot.style.top=originY+'px';
+  document.body.appendChild(dot);
+  document.body.classList.add('term-autoscrolling');
+  const DEAD=8;
+  const timer=setInterval(()=>{
+    const dy=curY-originY;
+    if(Math.abs(dy)<=DEAD){dot.classList.remove('up','down');return;}
+    const lines=Math.max(1,Math.min(40,Math.round((Math.abs(dy)-DEAD)/6)));
+    st.term.scrollLines(dy<0?-lines:lines);
+    dot.classList.toggle('up',dy<0);dot.classList.toggle('down',dy>0);
+  },40);
+  const move=ev=>{curY=ev.clientY;};
+  const stop=()=>{
+    clearInterval(timer);
+    document.removeEventListener('mousemove',move,true);
+    document.removeEventListener('mousedown',stop,true);
+    document.removeEventListener('wheel',stop,true);
+    document.removeEventListener('keydown',escStop,true);
+    window.removeEventListener('blur',stop);
+    dot.remove();
+    document.body.classList.remove('term-autoscrolling');
+  };
+  const escStop=ev=>{if(ev.key==='Escape')stop();};
+  document.addEventListener('mousemove',move,true);
+  document.addEventListener('mousedown',stop,true);
+  document.addEventListener('wheel',stop,true);
+  document.addEventListener('keydown',escStop,true);
+  window.addEventListener('blur',stop);
+}
+
+/* ---- right-click menu: copy / paste / clear ---- */
+function closeTermMenu(){
+  const m=document.getElementById('termCtx');
+  if(m)m.remove();
+}
+function openTermMenu(x,y,tab){
+  closeTermMenu();
+  if(!xtermState[tab.id])return;
+  const items=[['copy','copy','Копировать'],['paste','upload','Вставить'],['clear','eraser','Очистить']];
+  const m=document.createElement('div');
+  m.id='termCtx';m.className='term-ctx';m.style.visibility='hidden';
+  m.innerHTML=items.map(([act,ico,label])=>'<button class="term-ctx-i" data-act="'+act+'">'+IC(ico)+'<span>'+label+'</span></button>').join('');
+  document.body.appendChild(m);
+  const r=m.getBoundingClientRect();
+  m.style.left=Math.max(4,Math.min(x,window.innerWidth-r.width-8))+'px';
+  m.style.top=Math.max(4,Math.min(y,window.innerHeight-r.height-8))+'px';
+  m.style.visibility='';
+  m.onclick=e=>{
+    const b=e.target.closest('[data-act]');if(!b)return;
+    closeTermMenu();
+    termAction(b.dataset.act,tab);
+  };
+}
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#termCtx'))closeTermMenu();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTermMenu();});
+
 function termAction(act,t){
   if(act==='files'){if(t.connId&&!t.closed)openFiles(t.connId);return;}
   if(act==='claude'){if(t.connId&&!t.closed)openClaude(t.connId);return;}
@@ -171,6 +236,16 @@ function termAction(act,t){
     }
     navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});
     toast(sel?'Выделение скопировано':'Весь буфер терминала скопирован','ok','Терминал');
+    return;
+  }
+  if(act==='paste'){
+    if(!st||!navigator.clipboard||!navigator.clipboard.readText)return;
+    navigator.clipboard.readText().then(text=>{
+      if(!text)return;
+      st.term.scrollToBottom();
+      if(t.local){if(t.ptyId&&!t.exited)window.localAPI.write(t.ptyId,text);}
+      else if(t.connId&&!t.closed&&!t.agentBusy)window.sshAPI.write(t.connId,text);
+    }).catch(()=>{});
     return;
   }
   if(act==='clear'){if(st)st.term.clear();return;}
