@@ -66,13 +66,13 @@ function takeEarlyData(connId){const d=earlyData[connId];delete earlyData[connId
 // should see the command and its output, not the bookkeeping around them. Buffering only kicks in
 // during an agent command, so interactive programs are never held back.
 function writeTerm(tab,st,data){
-  if(!tab.agentBusy){if(tab.mbuf){st.term.write(tab.mbuf);tab.mbuf='';}st.term.write(data);return;}
+  if(!tab.agentBusy){if(tab.mbuf){st.term.write(tab.mbuf);tab.mbuf='';}st.term.write(data,()=>st.term.scrollToBottom());return;}
   const buf=(tab.mbuf||'')+data;
   const cut=buf.lastIndexOf('\n');
   if(cut===-1){tab.mbuf=buf;return;}
   tab.mbuf=buf.slice(cut+1);
   const shown=buf.slice(0,cut+1).split('\n').filter(l=>!l.includes('__CC_')).join('\n');
-  if(shown)st.term.write(shown);
+  if(shown)st.term.write(shown,()=>st.term.scrollToBottom());
 }
 if(window.sshAPI){
   window.sshAPI.onData((p)=>{

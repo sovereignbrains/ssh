@@ -87,7 +87,7 @@ let shellInfo={available:{pwsh:true,wps:true,cmd:true},home:''};
 if(window.localAPI){
   window.localAPI.onData(p=>{
     const tab=ptyToTab[p.ptyId];if(!tab)return;
-    const st=xtermState[tab.id];if(st)st.term.write(p.data);
+    const st=xtermState[tab.id];if(st)st.term.write(p.data,()=>st.term.scrollToBottom());
   });
   window.localAPI.onExit(p=>{
     const tab=ptyToTab[p.ptyId];if(!tab)return;
