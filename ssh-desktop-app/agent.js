@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
 const { Readable, Writable } = require('stream');
@@ -75,6 +76,26 @@ function detectClaude(force) {
         : { found: true, path: file, version: String(stdout).trim() };
       resolve(detected);
     });
+  });
+}
+
+// The user's own sing-box client exposes a local mixed (SOCKS+HTTP) inbound
+// on this port. Claude Code's own network traffic normally rides whatever
+// the OS considers the default route, which is exactly what gets shuffled
+// around during unrelated system-level network testing (VPN/TUN work) - a
+// route flap there shouldn't be able to break the chat. Routing through this
+// fixed local proxy instead sidesteps that, but only when sing-box is
+// actually up: a hardcoded proxy with nothing listening would make things
+// strictly worse (hard failure instead of a chance the current route works),
+// so this is probed fresh before every chat start rather than assumed.
+const LOCAL_PROXY_PORT = 2080;
+function probeLocalProxy(port, timeoutMs) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port, timeout: timeoutMs });
+    const done = (ok) => { socket.destroy(); resolve(ok); };
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
   });
 }
 
@@ -478,7 +499,12 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const acp = await import('@agentclientprotocol/sdk');
     const workspace = workspaceDir();
 
-    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path };
+    const proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
+    const proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
+    const env = {
+      ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path,
+      ...(proxyUp ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl } : {}),
+    };
     const proc = spawn(process.execPath, [adapterEntry()], { cwd: workspace, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     chat.proc = proc;
     let stderr = '';
