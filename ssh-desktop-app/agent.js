@@ -124,6 +124,28 @@ function probeDirect(timeoutMs) {
 }
 function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
 
+// Anthropic SDK errors crossing the ACP wire tend to keep a status/request-id/response body even
+// after passing through JSON-RPC, but the journal UI (renderer/journal.js) only ever displays an
+// entry's `message` and `stack` - a plain `extra` field on the log line would be saved to
+// errors.log but never actually shown. So fold whatever's on the error object into `stack` instead,
+// appended after the real stack trace (still behind the journal's "стек вызовов" disclosure).
+function errDetails(e) {
+  if (!e || typeof e !== 'object') return {};
+  const parts = [];
+  for (const key of ['status', 'statusCode', 'code', 'type', 'requestID', 'request_id']) {
+    if (e[key] !== undefined) parts.push(key + ': ' + e[key]);
+  }
+  if (e.headers !== undefined) parts.push('headers: ' + safeJson(e.headers));
+  if (e.error !== undefined) parts.push('body: ' + safeJson(e.error));
+  if (e.data !== undefined) parts.push('data: ' + safeJson(e.data));
+  if (!parts.length) return {};
+  return { stack: (e.stack ? e.stack + '\n\n' : '') + parts.join('\n') };
+}
+function safeJson(v) {
+  if (v === null || typeof v !== 'object') return String(v);
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
 function adapterEntry() {
   return path.join(__dirname, 'node_modules', '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js');
 }
@@ -596,7 +618,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
           chat.session = ctx.attachSession({ ...loadResp, sessionId: chat.resumeSessionId });
           resumed = true;
         } catch (e) {
-          logError('claude (возобновление)', e);
+          logError('claude (возобновление)', e, errDetails(e));
         }
       }
       if (!chat.session) {
@@ -636,7 +658,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       if (!chats.has(chat.chatId)) return;
       const msg = (e && e.message) || String(e);
       const auth = /auth|login|log in|credential|unauthori/i.test(msg);
-      logError('claude', { message: msg + (stderr ? '\n' + stderr.trim().split('\n').slice(-6).join('\n') : ''), stack: e && e.stack });
+      logError('claude', { message: msg + (stderr ? '\n' + stderr.trim().split('\n').slice(-6).join('\n') : ''), stack: e && e.stack }, errDetails(e));
       closeChat(chat, auth ? 'Нужен вход в Claude Code: запустите «claude» в локальном терминале и выполните /login' : msg);
     });
   }
@@ -690,6 +712,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     chat.busy = true;
     chat.session.prompt(content).catch((e) => {
       chat.busy = false;
+      logError('claude (prompt)', e, errDetails(e));
       sendToRenderer('agent:stop', { chatId, stopReason: 'error', error: (e && e.message) || String(e) });
     });
     return { ok: true };
