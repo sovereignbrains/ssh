@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
@@ -105,7 +106,22 @@ function probeTcp(host, port, timeoutMs) {
     socket.once('error', () => done(false));
   });
 }
-function probeDirect(timeoutMs) { return probeTcp(API_HOST, 443, timeoutMs); }
+// A bare TCP connect is not enough here: this user's DPI lets the TCP handshake through and only
+// resets once real TLS/HTTP data moves (see ssh-proxy.js), so probeTcp would report "direct works"
+// right before the adapter's actual request got reset. Do a real HTTPS round trip instead - only a
+// genuine HTTP response (any status) counts as "the direct path actually works".
+function probeDirect(timeoutMs) {
+  return new Promise((resolve) => {
+    const req = https.request({ host: API_HOST, port: 443, path: '/', method: 'HEAD', timeout: timeoutMs }, (res) => {
+      res.destroy();
+      resolve(true);
+    });
+    const done = (ok) => { req.destroy(); resolve(ok); };
+    req.once('timeout', () => done(false));
+    req.once('error', () => done(false));
+    req.end();
+  });
+}
 function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
 
 function adapterEntry() {
@@ -510,7 +526,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
 
     let proxyUp = false;
     let proxyUrl = null;
-    if (!(await probeDirect(400))) {
+    if (!(await probeDirect(1500))) {
       proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
       proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
       if (!proxyUp) {
