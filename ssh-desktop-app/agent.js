@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const https = require('https');
+const tls = require('tls');
 const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
@@ -107,19 +107,22 @@ function probeTcp(host, port, timeoutMs) {
   });
 }
 // A bare TCP connect is not enough here: this user's DPI lets the TCP handshake through and only
-// resets once real TLS/HTTP data moves (see ssh-proxy.js), so probeTcp would report "direct works"
-// right before the adapter's actual request got reset. Do a real HTTPS round trip instead - only a
-// genuine HTTP response (any status) counts as "the direct path actually works".
+// resets once the TLS ClientHello names the host (see ssh-proxy.js), so probeTcp would report
+// "direct works" right before the adapter's actual request got reset. Finish a TLS handshake
+// instead - that is exactly the step DPI kills, and it is where the answer lives.
+//
+// Deliberately NOT an HTTP request: an unauthenticated HEAD to the API on every chat start looks
+// like scanning, and Anthropic's edge answers the real request that follows with
+// "403 Request not allowed" (errorKind authentication_failed). 1.3.27 shipped that HEAD and the
+// chat started failing on 403 within minutes; a handshake that never sends a request is invisible
+// to the HTTP layer and still proves the path survives.
 function probeDirect(timeoutMs) {
   return new Promise((resolve) => {
-    const req = https.request({ host: API_HOST, port: 443, path: '/', method: 'HEAD', timeout: timeoutMs }, (res) => {
-      res.destroy();
-      resolve(true);
-    });
-    const done = (ok) => { req.destroy(); resolve(ok); };
-    req.once('timeout', () => done(false));
-    req.once('error', () => done(false));
-    req.end();
+    const socket = tls.connect({ host: API_HOST, port: 443, servername: API_HOST, timeout: timeoutMs });
+    const done = (ok) => { socket.destroy(); resolve(ok); };
+    socket.once('secureConnect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
   });
 }
 function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
