@@ -550,7 +550,16 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       (async () => {
         while (chats.has(chat.chatId)) {
           let m;
-          try { m = await chat.session.nextUpdate(); } catch { break; }
+          try { m = await chat.session.nextUpdate(); } catch (e) {
+            // The ACP stream died (adapter/CLI hiccup, e.g. a broken connection mid-turn) without
+            // the process itself exiting — proc.on('exit') below won't fire, so without this the
+            // renderer never gets a stop and "Claude работает…" hangs until the app is restarted.
+            if (chats.has(chat.chatId)) {
+              chat.busy = false;
+              sendToRenderer('agent:stop', { chatId: chat.chatId, stopReason: 'error', error: (e && e.message) || String(e) });
+            }
+            break;
+          }
           if (m.kind === 'stop') {
             chat.busy = false;
             sendToRenderer('agent:stop', { chatId: chat.chatId, stopReason: m.stopReason });
