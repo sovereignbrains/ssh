@@ -75,6 +75,7 @@
     },
     "beforeBuild": "scripts/before-build.js",
     "beforePack": "scripts/check-packaged-files.js",
+    "afterPack": "scripts/check-packed-modules.js",
     "npmRebuild": false,
     "publish": [
       {

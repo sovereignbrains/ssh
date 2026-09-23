@@ -46,9 +46,12 @@ function compareVersions(a, b) {
   return 0;
 }
 
+// Only a version that has reached its window counts as a way back. An installer is archived when
+// it is downloaded, before anyone knows it starts: 1.3.31 and 1.3.32 were both archived that way,
+// pushed 1.3.30 out of the archive and left 1.3.32 with nothing to roll back to.
 function rollbackTarget(currentVersion) {
   return state.installers
-    .filter((e) => e.version !== currentVersion && !state.blocked.includes(e.version))
+    .filter((e) => e.verified && e.version !== currentVersion && !state.blocked.includes(e.version))
     .filter((e) => fs.existsSync(path.join(archiveDir(), e.file)))
     .sort((a, b) => compareVersions(b.version, a.version))[0] || null;
 }
@@ -61,12 +64,14 @@ function runInstaller(file) {
 }
 
 function rollback(currentVersion, reason) {
+  // Blocked even when there is nowhere to go, so a working copy reinstalled by hand is not offered it again.
+  if (!state.blocked.includes(currentVersion)) state.blocked.push(currentVersion);
   const target = rollbackTarget(currentVersion);
   if (!target) {
-    log('rollback impossible from ' + currentVersion + ' (' + reason + '): no archived installer');
+    save();
+    log('rollback impossible from ' + currentVersion + ' (' + reason + '): no verified installer');
     return false;
   }
-  if (!state.blocked.includes(currentVersion)) state.blocked.push(currentVersion);
   state.launch = null;
   state.fails = {};
   save();
@@ -102,6 +107,11 @@ function alive() {
   if (!app.isPackaged || !state.launch) return;
   state.launch.stage = 'alive';
   delete state.fails[app.getVersion()];
+  const own = state.installers.find((e) => e.version === app.getVersion());
+  if (own && !own.verified) {
+    own.verified = true;
+    log('installer for ' + own.version + ' verified');
+  }
   save();
   if (stableTimer) return;
   stableTimer = setTimeout(() => {
@@ -139,11 +149,16 @@ function archiveInstaller(version) {
     fs.mkdirSync(archiveDir(), { recursive: true });
     fs.copyFileSync(path.join(dir, file), path.join(archiveDir(), file));
     state.installers = state.installers.filter((e) => e.version !== version);
-    state.installers.push({ version, file, at: Date.now() });
+    state.installers.push({ version, file, at: Date.now(), verified: false });
     state.installers.sort((a, b) => compareVersions(b.version, a.version));
-    for (const old of state.installers.splice(KEEP)) {
-      try { fs.unlinkSync(path.join(archiveDir(), old.file)); } catch {}
+    // Keep the KEEP newest verified installers plus the one just downloaded; an unproven
+    // version must never push a proven one out of the archive.
+    let verified = 0;
+    const keep = state.installers.filter((e) => e.version === version || (e.verified && ++verified <= KEEP));
+    for (const old of state.installers.filter((e) => !keep.includes(e))) {
+      if (old.file !== file) try { fs.unlinkSync(path.join(archiveDir(), old.file)); } catch {}
     }
+    state.installers = keep;
     save();
     log('archived installer for ' + version);
   } catch (e) {
