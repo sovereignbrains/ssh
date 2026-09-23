@@ -485,7 +485,7 @@ async function clSend(){
     clQueueRender();
     return;
   }
-  chat.busy=true;chat.lastPrompt=content;chat.authRetried=false;
+  chat.busy=true;chat.lastPrompt=content;chat.authTries=0;chat.authRetryPending=false;
   chat.items.push({kind:'user',text:text,attachments:atts});
   clQueueRender();
   const r=await window.agentAPI.prompt(chat.chatId,content);
@@ -494,11 +494,15 @@ async function clSend(){
 // The first prompt after the chat sat idle is sometimes refused before it ever reaches the model
 // ("Failed to authenticate. API Error: 403 Request not allowed", a <synthetic> reply from the CLI)
 // while an identical resend moments later goes through - 4 of 4 times on 23.09.2026, with the
-// network, session resume, packaged build and model all ruled out. Retry that once, quietly.
+// network, session resume, packaged build and model all ruled out. Retry quietly.
+// One retry after 4 s was not enough: on 24.09.2026 the refusals ran for ~20 s (two chats, a fresh
+// CLI process each time) and only a resend ~50 s after the first one went through. So back off.
+const CL_AUTH_DELAYS=[5000,15000,30000];
 function clAuthBlip(msg){return /Failed to authenticate|authentication_failed|403 Request not allowed/i.test(String(msg||''));}
 async function clRetryAfterAuth(connId,content){
   const chat=CL.chats[connId];if(!chat||!chat.authRetryPending)return;
   chat.authRetryPending=false;
+  if(chat.authNote)chat.authNote.text='Сервер отклонил запрос (403) — повтор '+chat.authTries+' из '+CL_AUTH_DELAYS.length+'…';
   if(chat.state!=='closed'){
     chat.busy=true;
     const r=await window.agentAPI.prompt(chat.chatId,content);
@@ -507,7 +511,7 @@ async function clRetryAfterAuth(connId,content){
   }
   const r=await window.agentAPI.start(connId,clProfileId(connId),false);
   if(!r.ok){chat.items.push({kind:'info',error:true,text:r.error});clQueueRender();return;}
-  CL.chats[connId]={chatId:r.chatId,connId,state:'starting',busy:true,items:chat.items,pendingPrompt:content,lastPrompt:content,authRetried:true,resumedNoted:true};
+  CL.chats[connId]={chatId:r.chatId,connId,state:'starting',busy:true,items:chat.items,pendingPrompt:content,lastPrompt:content,authTries:chat.authTries,authNote:chat.authNote,resumedNoted:true};
   logEvent('info','claude','Запущен Claude Code (повтор после 403)',clTarget(CL.chats[connId]));
   clQueueRender();
 }
@@ -691,7 +695,7 @@ if(window.agentAPI){
       chat.busy=false;chat.pendingPrompt=null;
       chat.items.forEach(i=>{if((i.kind==='approval'||i.kind==='permission')&&i.state==='pending')i.state='expired';if(i.approval&&i.approval.state==='pending')i.approval.state='expired';});
       const normal=/^(Чат завершён|Начат новый чат)$/.test(p.message);
-      if(p.message&&!normal&&!(chat.authRetryPending&&clAuthBlip(p.message))){
+      if(p.message&&!normal&&!((chat.authRetryPending||chat.authTries)&&clAuthBlip(p.message))){
         chat.items.push({kind:'info',error:true,text:p.message});
         logEvent('err','claude','Claude остановлен: '+p.message,clTarget(chat));
       }
@@ -731,15 +735,19 @@ if(window.agentAPI){
     const chat=clChatById(p.chatId);if(!chat)return;
     chat.busy=false;
     const last=chat.items[chat.items.length-1];if(last)last.closed=true;
-    if(p.error&&clAuthBlip(p.error)&&!chat.authRetried&&chat.lastPrompt){
-      chat.authRetried=true;chat.authRetryPending=true;
+    if(p.error&&clAuthBlip(p.error)&&(chat.authTries||0)<CL_AUTH_DELAYS.length&&chat.lastPrompt){
+      const delay=CL_AUTH_DELAYS[chat.authTries||0];
+      chat.authTries=(chat.authTries||0)+1;chat.authRetryPending=true;
       if(last&&last.kind==='agent'&&clAuthBlip(last.text))chat.items.pop();
-      chat.items.push({kind:'info',text:'Сервер отклонил запрос (403) — повторяю автоматически…'});
-      logEvent('warn','claude','403 на первом запросе — автоповтор',clTarget(chat));
+      const note='Сервер отклонил запрос (403) — повторю через '+delay/1000+' с ('+chat.authTries+' из '+CL_AUTH_DELAYS.length+')…';
+      if(chat.authNote&&chat.items[chat.items.length-1]===chat.authNote)chat.authNote.text=note;
+      else chat.items.push(chat.authNote={kind:'info',text:note});
+      logEvent('warn','claude','403 — автоповтор '+chat.authTries+' из '+CL_AUTH_DELAYS.length,clTarget(chat));
       const connId=chat.connId,content=chat.lastPrompt;
-      setTimeout(()=>clRetryAfterAuth(connId,content),4000);
+      setTimeout(()=>clRetryAfterAuth(connId,content),delay);
       clQueueRender();return;
     }
+    if(p.error&&clAuthBlip(p.error)&&chat.authNote&&chat.authTries>=CL_AUTH_DELAYS.length)chat.authNote.text='Сервер отклонил запрос (403) — '+CL_AUTH_DELAYS.length+' повтора не помогли';
     if(p.error){
       const msg=String(p.error).replace(/^Error invoking remote method '[^']+': (?:Error: )?/,'').replace(/^Internal error:\s*/i,'');
       const limit=/session limit|usage limit|hit your .*limit/i.test(msg);
