@@ -497,6 +497,9 @@ async function clSend(){
 // network, session resume, packaged build and model all ruled out. Retry quietly.
 // One retry after 4 s was not enough: on 24.09.2026 the refusals ran for ~20 s (two chats, a fresh
 // CLI process each time) and only a resend ~50 s after the first one went through. So back off.
+// The actual trigger turned out to be timing, not the server's mood: a prompt sent 0.1-0.2 s after
+// the CLI came up got the 403, one sent 3+ s later didn't. agent.js now holds the first prompt of a
+// fresh session (FIRST_PROMPT_SETTLE_MS); this backoff stays as a safety net.
 const CL_AUTH_DELAYS=[5000,15000,30000];
 function clAuthBlip(msg){return /Failed to authenticate|authentication_failed|403 Request not allowed/i.test(String(msg||''));}
 async function clRetryAfterAuth(connId,content){

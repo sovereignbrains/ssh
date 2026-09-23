@@ -97,6 +97,8 @@ function detectClaude(force) {
 // of what local client is or isn't running. All three are probed fresh before every chat start.
 const API_HOST = 'api.anthropic.com';
 const LOCAL_PROXY_PORT = 2080;
+// See agent:prompt - how long a freshly started session must sit before its first prompt goes out.
+const FIRST_PROMPT_SETTLE_MS = 4000;
 function probeTcp(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port, timeout: timeoutMs });
@@ -629,6 +631,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       }
       const mem = memFor(chat.profileId);
       if (mem) { mem.sessionId = chat.session.sessionId; saveMemory(); }
+      chat.readyAt = Date.now();
       status(chat, 'ready', '', resumed);
       const configOptions = (chat.session.newSessionResponse && chat.session.newSessionResponse.configOptions) || null;
       if (configOptions) sendToRenderer('agent:update', { chatId: chat.chatId, update: { sessionUpdate: 'config_option_update', configOptions } });
@@ -713,6 +716,16 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     if (!chat || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
     if (chat.busy) return { ok: false, error: 'Claude ещё отвечает — дождитесь или остановите' };
     chat.busy = true;
+    // A prompt that reaches the CLI within a fraction of a second of session-ready comes back
+    // "403 Request not allowed" (synthetic, errorKind authentication_failed) almost every time:
+    // 23.09.2026 11 of 12 such sends (0.1-0.2 s after ready) failed, while sends 3-4 s after ready
+    // all went through. The renderer resumes the chat and prompts immediately - both on a normal
+    // send to a closed chat and on its automatic 403 retry - so it hit this every time. Hold the
+    // first prompt until the fresh process has had a few seconds to settle.
+    const settle = FIRST_PROMPT_SETTLE_MS - (Date.now() - (chat.readyAt || 0));
+    if (settle > 0) await new Promise((r) => setTimeout(r, settle));
+    // Closed while we waited: closeChat has already told the renderer, don't add a second error.
+    if (!chats.has(chatId) || !chat.session) { chat.busy = false; return { ok: true }; }
     chat.session.prompt(content).catch((e) => {
       chat.busy = false;
       logError('claude (prompt)', e, errDetails(e));
