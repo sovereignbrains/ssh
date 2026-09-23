@@ -588,6 +588,19 @@ document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clCfgMenu,.cl
 async function clCtxPaste(){
   const ta=$('#clText');
   try{
+    // A screenshot (Win+Shift+S etc.) has no text representation - readText() below would just
+    // insert nothing. Check for image data first, same clAddFiles path as the native Ctrl+V handler.
+    if(navigator.clipboard.read){
+      try{
+        const items=await navigator.clipboard.read();
+        const files=[];
+        for(const item of items){
+          const type=item.types.find(t=>t.startsWith('image/'));
+          if(type)files.push(new File([await item.getType(type)],'clipboard.'+type.split('/')[1],{type}));
+        }
+        if(files.length){await clAddFiles(files);return;}
+      }catch(_){}
+    }
     const t=await navigator.clipboard.readText();
     const s=ta.selectionStart,en=ta.selectionEnd;
     ta.focus();ta.setRangeText(t,s,en,'end');
