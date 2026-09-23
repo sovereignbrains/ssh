@@ -11,6 +11,7 @@ const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
 const { Readable, Writable } = require('stream');
+const sshProxy = require('./ssh-proxy');
 
 const MCP_NAME = 'ssh';
 const READ_LIMIT = 256 * 1024;
@@ -18,6 +19,12 @@ const OUTPUT_LIMIT = 30000;
 const LOCAL_TOOLS_OFF = ['Bash', 'BashOutput', 'KillShell', 'KillBash', 'Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS'];
 
 const LOCAL_ID = 'local';
+// Random per-process id, fresh every time this module loads (i.e. every agent process start,
+// which happens on app restart/update/crash-recovery). Used to tell a genuine app restart apart
+// from an in-process chat reconnect after the ACP stream merely died (see closeChat) - both take
+// the same session.load/resumeSessionId path, but only the former should tell the model itself
+// that it's picking up after a restart.
+const PROCESS_BOOT_ID = crypto.randomUUID();
 
 const SYSTEM_APPEND_LOCAL = [
   'You are running inside an SSH client, but this chat targets the local computer it runs on, not a remote server.',
@@ -499,8 +506,12 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const acp = await import('@agentclientprotocol/sdk');
     const workspace = workspaceDir();
 
-    const proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
-    const proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
+    let proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
+    let proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
+    if (!proxyUp) {
+      const bridgePort = await sshProxy.ensureIndependentProxy(2000).catch(() => null);
+      if (bridgePort) { proxyUp = true; proxyUrl = 'http://127.0.0.1:' + bridgePort; }
+    }
     const env = {
       ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path,
       ...(proxyUp ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}),
@@ -548,7 +559,8 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       chat.acp = acp;
       await ctx.request(acp.methods.agent.initialize, { protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
       const mcpServers = [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }];
-      const sessionMeta = { systemPrompt: { append: chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
+      const restartNote = chat.restartNote ? '\n\nThe SSH Client app just restarted (update, manual relaunch, or crash recovery) and this conversation was resumed from the saved session - the previous agent process is gone, this is a fresh one.' : '';
+      const sessionMeta = { systemPrompt: { append: (chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND) + restartNote }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
       let resumed = false;
       if (chat.resumeSessionId) {
         try {
@@ -614,6 +626,8 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     if (!isLocal && !getConnection(connId)) return { ok: false, error: 'SSH-сессия не подключена' };
     for (const c of chats.values()) if (c.connId === connId) closeChat(c, 'Начат новый чат');
     const m = memFor(profileId);
+    const isRestart = !!(m && m.sessionId && m.lastBootId && m.lastBootId !== PROCESS_BOOT_ID);
+    if (m) { m.lastBootId = PROCESS_BOOT_ID; saveMemory(); }
     const chat = {
       chatId: crypto.randomUUID(), connId, profileId: profileId || null, local: isLocal,
       token: crypto.randomBytes(32).toString('hex'), state: 'starting', busy: false,
@@ -621,6 +635,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       // "Always allow" decisions survive a deliberate new chat; conversation memory does not.
       autoApprove: new Set(m ? Object.keys(m.autoApprove).filter((k) => m.autoApprove[k]) : []),
       resumeSessionId: (!fresh && m && m.sessionId) || null,
+      restartNote: isRestart,
     };
     chats.set(chat.chatId, chat);
     tokens.set(chat.token, chat.chatId);
