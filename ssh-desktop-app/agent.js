@@ -86,25 +86,27 @@ function detectClaude(force) {
   });
 }
 
-// The user's own sing-box client exposes a local mixed (SOCKS+HTTP) inbound
-// on this port. Claude Code's own network traffic normally rides whatever
-// the OS considers the default route, which is exactly what gets shuffled
-// around during unrelated system-level network testing (VPN/TUN work) - a
-// route flap there shouldn't be able to break the chat. Routing through this
-// fixed local proxy instead sidesteps that, but only when sing-box is
-// actually up: a hardcoded proxy with nothing listening would make things
-// strictly worse (hard failure instead of a chance the current route works),
-// so this is probed fresh before every chat start rather than assumed.
+// Claude Code's own network traffic normally rides whatever the OS considers the default route,
+// which is exactly what gets shuffled around by any local VPN/proxy client (sing-box-daemon,
+// singbox-tray, Sovereign's TUN mode, or whatever comes next) - a route flap or a client being
+// mid-restart there shouldn't be able to break the chat. Rather than special-casing any one of
+// those clients, probe reality directly: can we already reach the API with no proxy at all? Only
+// if that fails do we reach for a proxy - first the sing-box mixed-inbound port if something's
+// listening there, then the fully independent SSH tunnel (ssh-proxy.js), which works regardless
+// of what local client is or isn't running. All three are probed fresh before every chat start.
+const API_HOST = 'api.anthropic.com';
 const LOCAL_PROXY_PORT = 2080;
-function probeLocalProxy(port, timeoutMs) {
+function probeTcp(host, port, timeoutMs) {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port, timeout: timeoutMs });
+    const socket = net.createConnection({ host, port, timeout: timeoutMs });
     const done = (ok) => { socket.destroy(); resolve(ok); };
     socket.once('connect', () => done(true));
     socket.once('timeout', () => done(false));
     socket.once('error', () => done(false));
   });
 }
+function probeDirect(timeoutMs) { return probeTcp(API_HOST, 443, timeoutMs); }
+function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
 
 function adapterEntry() {
   return path.join(__dirname, 'node_modules', '@agentclientprotocol', 'claude-agent-acp', 'dist', 'index.js');
@@ -506,11 +508,15 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const acp = await import('@agentclientprotocol/sdk');
     const workspace = workspaceDir();
 
-    let proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
-    let proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
-    if (!proxyUp) {
-      const bridgePort = await sshProxy.ensureIndependentProxy(2000).catch(() => null);
-      if (bridgePort) { proxyUp = true; proxyUrl = 'http://127.0.0.1:' + bridgePort; }
+    let proxyUp = false;
+    let proxyUrl = null;
+    if (!(await probeDirect(400))) {
+      proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
+      proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
+      if (!proxyUp) {
+        const bridgePort = await sshProxy.ensureIndependentProxy(2000).catch(() => null);
+        if (bridgePort) { proxyUp = true; proxyUrl = 'http://127.0.0.1:' + bridgePort; }
+      }
     }
     const env = {
       ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path,
