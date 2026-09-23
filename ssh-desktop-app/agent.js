@@ -97,8 +97,6 @@ function detectClaude(force) {
 // of what local client is or isn't running. All three are probed fresh before every chat start.
 const API_HOST = 'api.anthropic.com';
 const LOCAL_PROXY_PORT = 2080;
-// See agent:prompt - how long a freshly started session must sit before its first prompt goes out.
-const FIRST_PROMPT_SETTLE_MS = 4000;
 function probeTcp(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port, timeout: timeoutMs });
@@ -242,6 +240,21 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const d = path.join(app.getPath('userData'), 'claude-workspace');
     fs.mkdirSync(d, { recursive: true });
     return d;
+  }
+
+  // Claude Code's own debug log, one file per chat start (--debug-file, handed to the CLI through the
+  // adapter's extraArgs). The transcript records a refused request only as a <synthetic> "403 Request
+  // not allowed"; this log has the API's response body, x-client-request-id (what Anthropic can look up)
+  // and the startup fetches that precede it - bootstrap, policy limits, remote settings. No tokens in it.
+  const DEBUG_KEEP = 30;
+  function debugLogFile(chat) {
+    try {
+      const dir = path.join(app.getPath('userData'), 'claude-debug');
+      fs.mkdirSync(dir, { recursive: true });
+      const old = fs.readdirSync(dir).filter((f) => f.endsWith('.log')).sort();
+      for (const f of old.slice(0, Math.max(0, old.length - (DEBUG_KEEP - 1)))) { try { fs.unlinkSync(path.join(dir, f)); } catch (_) {} }
+      return path.join(dir, new Date().toISOString().replace(/[:.]/g, '-') + '-' + chat.chatId.slice(0, 8) + '.log');
+    } catch (e) { logError('claude (отладочный лог)', e); return null; }
   }
 
   /* ---- approvals for remote actions ---- */
@@ -609,7 +622,8 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       await ctx.request(acp.methods.agent.initialize, { protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
       const mcpServers = [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }];
       const restartNote = chat.restartNote ? '\n\nThe SSH Client app just restarted (update, manual relaunch, or crash recovery) and this conversation was resumed from the saved session - the previous agent process is gone, this is a fresh one.' : '';
-      const sessionMeta = { systemPrompt: { append: (chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND) + restartNote }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF } } };
+      chat.debugFile = debugLogFile(chat);
+      const sessionMeta = { systemPrompt: { append: (chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND) + restartNote }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF, ...(chat.debugFile ? { extraArgs: { 'debug-file': chat.debugFile } } : {}) } } };
       let resumed = false;
       if (chat.resumeSessionId) {
         try {
@@ -631,7 +645,6 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       }
       const mem = memFor(chat.profileId);
       if (mem) { mem.sessionId = chat.session.sessionId; saveMemory(); }
-      chat.readyAt = Date.now();
       status(chat, 'ready', '', resumed);
       const configOptions = (chat.session.newSessionResponse && chat.session.newSessionResponse.configOptions) || null;
       if (configOptions) sendToRenderer('agent:update', { chatId: chat.chatId, update: { sessionUpdate: 'config_option_update', configOptions } });
@@ -716,19 +729,11 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     if (!chat || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
     if (chat.busy) return { ok: false, error: 'Claude ещё отвечает — дождитесь или остановите' };
     chat.busy = true;
-    // A prompt that reaches the CLI within a fraction of a second of session-ready comes back
-    // "403 Request not allowed" (synthetic, errorKind authentication_failed) almost every time:
-    // 23.09.2026 11 of 12 such sends (0.1-0.2 s after ready) failed, while sends 3-4 s after ready
-    // all went through. The renderer resumes the chat and prompts immediately - both on a normal
-    // send to a closed chat and on its automatic 403 retry - so it hit this every time. Hold the
-    // first prompt until the fresh process has had a few seconds to settle.
-    const settle = FIRST_PROMPT_SETTLE_MS - (Date.now() - (chat.readyAt || 0));
-    if (settle > 0) await new Promise((r) => setTimeout(r, settle));
-    // Closed while we waited: closeChat has already told the renderer, don't add a second error.
-    if (!chats.has(chatId) || !chat.session) { chat.busy = false; return { ok: true }; }
     chat.session.prompt(content).catch((e) => {
       chat.busy = false;
-      logError('claude (prompt)', e, errDetails(e));
+      const details = errDetails(e);
+      if (chat.debugFile) details.stack = (details.stack || (e && e.stack) || '') + '\n\nОтладочный лог Claude Code: ' + chat.debugFile;
+      logError('claude (prompt)', e, details);
       sendToRenderer('agent:stop', { chatId, stopReason: 'error', error: (e && e.message) || String(e) });
     });
     return { ok: true };
