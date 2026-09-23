@@ -503,7 +503,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
     const env = {
       ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path,
-      ...(proxyUp ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl } : {}),
+      ...(proxyUp ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}),
     };
     const proc = spawn(process.execPath, [adapterEntry()], { cwd: workspace, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     chat.proc = proc;
