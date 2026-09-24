@@ -497,9 +497,9 @@ async function clSend(){
 // network, session resume, packaged build and model all ruled out. Retry quietly.
 // One retry after 4 s was not enough: on 24.09.2026 the refusals ran for ~20 s (two chats, a fresh
 // CLI process each time) and only a resend ~50 s after the first one went through. So back off.
-// Holding the first prompt 4 s after session-ready (1.3.32) did not help: 24.09.2026 four 403s in a
-// row for ~100 s after an app restart, the fifth send went through. Cause still unknown - agent.js
-// now runs the CLI with --debug-file (userData\claude-debug) so the next 403 comes with the response.
+// Cause found 24.09.2026: with sing-box off the request left from the Russian ISP line and Anthropic
+// refused the country. agent.js now checks loc= at the edge before choosing direct vs tunnel; each
+// retry below restarts the chat, so it re-probes and moves to the SSH tunnel if sing-box went away.
 const CL_AUTH_DELAYS=[5000,15000,30000];
 function clAuthBlip(msg){return /Failed to authenticate|authentication_failed|403 Request not allowed/i.test(String(msg||''));}
 async function clRetryAfterAuth(connId,content){

@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const tls = require('tls');
+const https = require('https');
 const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
@@ -106,23 +106,29 @@ function probeTcp(host, port, timeoutMs) {
     socket.once('error', () => done(false));
   });
 }
-// A bare TCP connect is not enough here: this user's DPI lets the TCP handshake through and only
-// resets once the TLS ClientHello names the host (see ssh-proxy.js), so probeTcp would report
-// "direct works" right before the adapter's actual request got reset. Finish a TLS handshake
-// instead - that is exactly the step DPI kills, and it is where the answer lives.
+// Reaching the API is not the same as being allowed to use it. With sing-box down, this user's
+// plain ISP line (Russia) completes the TLS handshake with api.anthropic.com just fine, and every
+// request then comes back from Anthropic's edge as 403 {"type":"forbidden","message":"Request not
+// allowed"} - a country block, no request_id, bootstrap and /v1/messages alike (24.09.2026,
+// --debug-file logs). The old handshake-only probe called that "direct works", so the chat never
+// fell back to the SSH tunnel and sat on 403s until sing-box came back.
 //
-// Deliberately NOT an HTTP request: an unauthenticated HEAD to the API on every chat start looks
-// like scanning, and Anthropic's edge answers the real request that follows with
-// "403 Request not allowed" (errorKind authentication_failed). 1.3.27 shipped that HEAD and the
-// chat started failing on 403 within minutes; a handshake that never sends a request is invisible
-// to the HTTP layer and still proves the path survives.
+// So ask the edge where it thinks we are: /cdn-cgi/trace on the API host is answered by Cloudflare
+// itself (never reaches Anthropic's API) and reports loc=<country> for this exact path. A blocked
+// country, a failed handshake (DPI) or a timeout all mean "not direct". No loc line at all falls
+// back to the old answer: the handshake worked, so direct it is.
+const BLOCKED_LOC = new Set(['RU', 'BY', 'CN', 'HK', 'MO', 'IR', 'KP', 'SY', 'CU']);
 function probeDirect(timeoutMs) {
   return new Promise((resolve) => {
-    const socket = tls.connect({ host: API_HOST, port: 443, servername: API_HOST, timeout: timeoutMs });
-    const done = (ok) => { socket.destroy(); resolve(ok); };
-    socket.once('secureConnect', () => done(true));
-    socket.once('timeout', () => done(false));
-    socket.once('error', () => done(false));
+    const req = https.get({ host: API_HOST, path: '/cdn-cgi/trace', timeout: timeoutMs, agent: false }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => resolve(!BLOCKED_LOC.has(((body.match(/^loc=(\w+)$/m) || [])[1] || '').toUpperCase())));
+      res.on('error', () => resolve(false));
+    });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
   });
 }
 function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
