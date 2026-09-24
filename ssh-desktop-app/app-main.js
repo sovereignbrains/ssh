@@ -365,7 +365,11 @@ function runInTerminal(connId, command, timeoutMs) {
     sendToRenderer('ssh:agent-busy', { connId, busy: true, command });
     entry.stream.write(
       "printf '%s%s\\n' '__CC_" + id + "' '_B__'\n" +
-      command + '\n' +
+      // The end marker rides on the command's last line, so the shell has read everything before the
+      // command starts: typed ahead on a line of its own it was swallowed by whatever read stdin
+      // (apt, certbot) and the run hung until timeout. </dev/null keeps the command off the tty too.
+      // The agent always sends a ( … ) subshell, so the redirect covers the whole command.
+      command + ' </dev/null; ' +
       "printf '\\n%s%s %s\\n' '__CC_" + id + "' '_E__' \"$?\"\n"
     );
   });
