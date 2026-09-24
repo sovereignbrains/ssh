@@ -2,8 +2,9 @@
 //
 // The ACP adapter (@agentclientprotocol/claude-agent-acp) runs as a child process and drives the
 // user's installed Claude Code. Its built-in local tools are disabled; instead this process serves
-// an MCP server on 127.0.0.1 whose tools act on the selected SSH connection. Every command and
-// every file write waits for the user's approval here, independent of Claude Code's own settings.
+// an MCP server on 127.0.0.1 whose tools act on this computer or, via `on`, on any connected SSH
+// session. Every command and every file write waits for the user's approval here, independent of
+// Claude Code's own settings.
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -27,19 +28,12 @@ const LOCAL_ID = 'local';
 // that it's picking up after a restart.
 const PROCESS_BOOT_ID = crypto.randomUUID();
 
-const SYSTEM_APPEND_LOCAL = [
+const SYSTEM_APPEND = [
   'You are running inside an SSH client, but this chat targets the local computer it runs on, not a remote server.',
   "Claude Code's own local tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.",
   'Paths are paths on this computer; relative paths resolve against the working directory shown above. Every run_command, write_file and edit_file call is shown to the user for approval, so keep commands focused and explain briefly why you run them.',
-  "When an SSH session is connected, run_command accepts `on`: pass that session's user@host and the command runs there instead, in the terminal the user is watching. A task spanning this computer and a server stays in one conversation — never ask the user to switch chats for it. File tools stay local; read and write remote files with commands.",
-  'Prefer non-interactive commands. Reply in the language the user writes in.',
-].join('\n');
-
-const SYSTEM_APPEND = [
-  'You are running inside an SSH client and operate on a remote server over SSH, not on the local computer.',
-  'Local file and shell tools are disabled. Use only the mcp__ssh__* tools: run_command, read_file, list_directory, write_file, edit_file.',
-  'Paths are paths on the remote server. Every run_command, write_file and edit_file call is shown to the user for approval, so keep commands focused and explain briefly why you run them.',
-  "Your commands run in the very shell the user is watching, so they see each one typed out and its output live. The session state is shared: a cd you run stays in effect for them too, and they can pick up right where you stopped. Commands that carry a secret are the exception — those run on a separate channel, off screen.",
+  "When an SSH session is connected, every tool accepts `on`: pass that session's user@host and it acts on that server instead — run_command runs there, the file tools read and write that server's files over SFTP (remote paths are absolute or ~/...). This is the only chat: a task spanning this computer and any number of servers stays in one conversation.",
+  "A command sent to a server is typed into the terminal the user is watching, so they see it and its output live. It runs in a subshell: cd, export, set -e or exit do not carry over to the next call and never close the user's shell — use cwd or chain with &&. Commands that carry a secret run on a separate channel, off screen.",
   'Prefer non-interactive commands (no pagers, no editors, add -y only when the user asked for changes). Reply in the language the user writes in.',
 ].join('\n');
 
@@ -383,7 +377,6 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
     const z = require('zod');
     const server = new McpServer({ name: 'ssh-client', version: '1.0.0' });
-    const where = chat.local ? 'on this computer' : 'on the remote server';
     const secretHelp = () => {
       const names = secretNames();
       return names.length
@@ -393,12 +386,10 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     // Values ride in over stdin, so they stay out of argv and need no AcceptEnv on the server.
     const remoteScript = (values, command) =>
       [...values].map(([name, value]) => name + '=' + shQuote(value) + '; export ' + name).join('\n') + '\n' + command + '\n';
-    const conn = () => chat.connId;
-    // A command from the local chat can be aimed at an open SSH session, so one conversation covers
-    // both machines — and the user watches it run in that server's own terminal.
-    const targets = () => (chat.local && listTargets ? listTargets() : []);
+    // Every tool can be aimed at an open SSH session, so one conversation covers this computer and
+    // the servers — commands show up in that server's own terminal, files go over SFTP.
+    const targets = () => (listTargets ? listTargets() : []);
     const targetHelp = () => {
-      if (!chat.local) return '';
       const list = targets();
       return list.length
         ? ' Connected SSH sessions you can aim at with `on`: ' + list.map((t) => t.label).join(', ') + '. Without `on` the command runs on this computer. The user watches it run in that session\'s terminal.'
@@ -412,30 +403,37 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
         || list.find((t) => t.connId === name)
         || null;
     };
+    const onArg = (what) => ({ on: z.string().optional().describe(what + ' a connected SSH session instead of this computer: pass its user@host as listed in run_command.') });
+    // { target } for a valid `on`, {} without one, { error } when that session is not connected.
+    const pickTarget = (on) => {
+      if (!on) return {};
+      const target = resolveTarget(on);
+      if (target) return { target };
+      const open = targets().map((t) => t.label).join(', ');
+      return { error: text('Сессия «' + on + '» не подключена.' + (open ? ' Открыты: ' + open + '.' : ' Ни одна SSH-сессия не подключена.'), true) };
+    };
     // SFTP does not expand ~, the shell does: resolve it against the SFTP home directory.
-    const remotePath = async (p) => {
-      if (p === '~' || p.startsWith('~/')) return (await sftp.home(conn())).replace(/\/+$/, '') + p.slice(1);
+    const remotePath = async (connId, p) => {
+      if (p === '~' || p.startsWith('~/')) return (await sftp.home(connId)).replace(/\/+$/, '') + p.slice(1);
       return p;
     };
+    const shown = (target, file) => (target ? target.label + ':' : '') + file;
     const guard = async (fn) => {
       try { return await fn(); } catch (e) { return text('Ошибка: ' + ((e && e.message) || e), true); }
     };
 
     server.registerTool('run_command', {
-      description: 'Run a shell command ' + where + (chat.local ? '' : ' over SSH') + ' (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.' + targetHelp() + secretHelp(),
+      description: 'Run a shell command on this computer (non-interactive). Returns combined stdout/stderr and the exit code. The user approves every call.' + targetHelp() + secretHelp(),
       inputSchema: {
         command: z.string().describe('Shell command to run'),
-        cwd: z.string().optional().describe(chat.local ? 'Working directory on this computer' : 'Remote working directory'),
+        cwd: z.string().optional().describe('Working directory (on the server when `on` is given)'),
         timeout_seconds: z.number().int().min(1).max(900).optional().describe('Kill the command after this many seconds (default 120)'),
         env_secrets: z.array(z.string()).optional().describe('Names of secrets to pass to the command as environment variables. The app fills in the values; they are never shown to you.'),
-        ...(chat.local ? { on: z.string().optional().describe('Run on a connected SSH session instead of this computer: pass its user@host as listed in this description.') } : {}),
+        ...onArg('Run on'),
       },
     }, ({ command, cwd, timeout_seconds, env_secrets, on }) => guard(async () => {
-      const target = on ? resolveTarget(on) : null;
-      if (on && !target) {
-        const open = targets().map((t) => t.label).join(', ');
-        return text('Сессия «' + on + '» не подключена.' + (open ? ' Открыты: ' + open + '.' : ' Ни одна SSH-сессия не подключена.'), true);
-      }
+      const { target, error } = pickTarget(on);
+      if (error) return error;
       const sec = collectSecrets(chat, command, env_secrets);
       if (sec.errors.length) return text('Команда не выполнена: ' + sec.errors.join('; ') + '.', true);
       const cdTarget = !cwd ? '' : cwd === '~' ? '~' : cwd.startsWith('~/') ? '"$HOME"/' + shQuote(cwd.slice(2)) : shQuote(cwd);
@@ -450,72 +448,76 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       if (!ok) return text('Пользователь отклонил выполнение команды.', true);
       const limit = (timeout_seconds || 120) * 1000;
       const fill = (s) => s.replace(SECRET_RE, (m, name) => (sec.values.has(name) ? sec.values.get(name) : m));
-      const remoteCommand = cwd ? '(cd ' + cdTarget + ' && ' + command + ')' : command;
-      const r = target
-        // Секреты не пускаем в общий терминал: значение осело бы на экране и в истории shell.
-        ? (sec.values.size
-            ? await execRemote(target.connId, 'sh -s', limit, remoteScript(sec.values, fill(full)))
-            : await runInTerminal(target.connId, remoteCommand, limit))
-        : chat.local
+      // The user's own shell runs it, but inside a subshell: a `set -e` or `exit` in the command
+      // used to end that shell and close the SSH session with it (24.09.2026, `set -e; … which ufw`).
+      const remoteCommand = '(\n' + (cwd ? 'cd ' + cdTarget + ' || exit\n' : '') + command + '\n)';
+      const r = !target
         ? await execLocal(fill(command), cwd ? localResolve(cwd) : null, limit, Object.fromEntries(sec.values))
+        // Секреты не пускаем в общий терминал: значение осело бы на экране и в истории shell.
         : sec.values.size
-          ? await execRemote(conn(), 'sh -s', limit, remoteScript(sec.values, fill(full)))
-          // No secret in play: run it in the shell the user is watching, so the command and its
-          // output appear in their terminal. A cwd stays scoped to a subshell — an explicit cd in
-          // the command itself is meant to stick, the tool's cwd argument is not.
-          : await runInTerminal(conn(), remoteCommand, limit);
+          ? await execRemote(target.connId, 'sh -s', limit, remoteScript(sec.values, fill(full)))
+          : await runInTerminal(target.connId, remoteCommand, limit);
       const status = r.timedOut ? 'timed out after ' + (timeout_seconds || 120) + 's' : 'exit code ' + (r.code === null ? '?' : r.code) + (r.signal ? ', signal ' + r.signal : '');
       sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'run_command', summary: command, result: (target ? target.label + ' · ' : '') + status + (sec.names.length ? ' · секреты: ' + sec.names.join(', ') : '') });
       return text('[' + status + ', ' + r.ms + ' ms]\n' + clip(r.output, OUTPUT_LIMIT), r.timedOut || (r.code !== 0 && r.code !== null));
     }));
 
     server.registerTool('read_file', {
-      description: 'Read a text file ' + where + ' (up to 256 KB).',
-      inputSchema: { path: z.string().describe(chat.local ? 'Absolute path, or relative to the working directory' : 'Absolute or home-relative remote path') },
-    }, ({ path: file }) => guard(async () => {
-      const r = chat.local ? localRead(file, READ_LIMIT) : await sftp.readText(conn(), await remotePath(file), READ_LIMIT);
+      description: 'Read a text file on this computer or, with `on`, on a connected server (up to 256 KB).',
+      inputSchema: { path: z.string().describe('Absolute path, or relative to the working directory (on a server: absolute or ~/...)'), ...onArg('Read from') },
+    }, ({ path: file, on }) => guard(async () => {
+      const { target, error } = pickTarget(on);
+      if (error) return error;
+      const r = target ? await sftp.readText(target.connId, await remotePath(target.connId, file), READ_LIMIT) : localRead(file, READ_LIMIT);
       if (r.data.includes(0)) return text('Файл двоичный — прочитать как текст нельзя (' + r.size + ' байт).', true);
       return text((r.truncated ? '[показаны первые ' + r.data.length + ' из ' + r.size + ' байт]\n' : '') + r.data.toString('utf8'));
     }));
 
     server.registerTool('list_directory', {
-      description: 'List a directory ' + where + '.',
-      inputSchema: { path: z.string().optional().describe('Remote directory (default: home)') },
-    }, ({ path: dir }) => guard(async () => {
-      const r = chat.local ? localList(dir) : await sftp.listDir(conn(), dir ? await remotePath(dir) : '.');
+      description: 'List a directory on this computer or, with `on`, on a connected server.',
+      inputSchema: { path: z.string().optional().describe('Directory (default: the working directory here, the home directory on a server)'), ...onArg('List on') },
+    }, ({ path: dir, on }) => guard(async () => {
+      const { target, error } = pickTarget(on);
+      if (error) return error;
+      const r = target ? await sftp.listDir(target.connId, dir ? await remotePath(target.connId, dir) : '.') : localList(dir);
       const lines = r.entries.sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name))
         .map((e) => e.perms + ' ' + String(e.dir ? '-' : e.size).padStart(10) + ' ' + e.name + (e.dir ? '/' : ''));
       return text(r.path + '\n' + lines.join('\n'));
     }));
 
     server.registerTool('write_file', {
-      description: 'Create or overwrite a text file ' + where + '. The user approves every call.',
-      inputSchema: { path: z.string(), content: z.string() },
-    }, ({ path: file, content }) => guard(async () => {
-      const ok = await askApproval(chat, 'write_file', file, clip(content, 4000));
+      description: 'Create or overwrite a text file on this computer or, with `on`, on a connected server. The user approves every call.',
+      inputSchema: { path: z.string(), content: z.string(), ...onArg('Write on') },
+    }, ({ path: file, content, on }) => guard(async () => {
+      const { target, error } = pickTarget(on);
+      if (error) return error;
+      // «Всегда разрешать» запись здесь не должно молча распространяться на серверы — и наоборот.
+      const ok = await askApproval(chat, target ? 'write_file_remote' : 'write_file', shown(target, file), clip(content, 4000));
       if (!ok) return text('Пользователь отклонил запись файла.', true);
-      if (chat.local) localWrite(file, content); else await sftp.writeText(conn(), await remotePath(file), content);
-      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'write_file', summary: file, result: Buffer.byteLength(content) + ' байт' });
-      return text('Записано ' + Buffer.byteLength(content) + ' байт в ' + file);
+      if (target) await sftp.writeText(target.connId, await remotePath(target.connId, file), content); else localWrite(file, content);
+      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'write_file', summary: shown(target, file), result: Buffer.byteLength(content) + ' байт' });
+      return text('Записано ' + Buffer.byteLength(content) + ' байт в ' + shown(target, file));
     }));
 
     server.registerTool('edit_file', {
-      description: 'Replace an exact text fragment in a file ' + where + '. old_string must occur exactly once unless replace_all is true. The user approves every call.',
-      inputSchema: { path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() },
-    }, ({ path: file, old_string, new_string, replace_all }) => guard(async () => {
-      const target = chat.local ? file : await remotePath(file);
-      const r = chat.local ? localRead(file, 4 * 1024 * 1024) : await sftp.readText(conn(), target, 4 * 1024 * 1024);
+      description: 'Replace an exact text fragment in a file on this computer or, with `on`, on a connected server. old_string must occur exactly once unless replace_all is true. The user approves every call.',
+      inputSchema: { path: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional(), ...onArg('Edit on') },
+    }, ({ path: file, old_string, new_string, replace_all, on }) => guard(async () => {
+      const { target, error } = pickTarget(on);
+      if (error) return error;
+      const rpath = target ? await remotePath(target.connId, file) : file;
+      const r = target ? await sftp.readText(target.connId, rpath, 4 * 1024 * 1024) : localRead(file, 4 * 1024 * 1024);
       if (r.truncated) return text('Файл больше 4 МБ — правка не поддерживается.', true);
       const src = r.data.toString('utf8');
       const count = old_string ? src.split(old_string).length - 1 : 0;
       if (!count) return text('Фрагмент old_string не найден в файле.', true);
       if (count > 1 && !replace_all) return text('Фрагмент встречается ' + count + ' раз — уточните его или передайте replace_all: true.', true);
-      const ok = await askApproval(chat, 'edit_file', file, '— ' + clip(old_string, 1800) + '\n+ ' + clip(new_string, 1800) + (count > 1 ? '\n(замен: ' + count + ')' : ''));
+      const ok = await askApproval(chat, target ? 'edit_file_remote' : 'edit_file', shown(target, file), '— ' + clip(old_string, 1800) + '\n+ ' + clip(new_string, 1800) + (count > 1 ? '\n(замен: ' + count + ')' : ''));
       if (!ok) return text('Пользователь отклонил правку файла.', true);
       const next = replace_all ? src.split(old_string).join(new_string) : src.replace(old_string, () => new_string);
-      if (chat.local) localWrite(target, next); else await sftp.writeText(conn(), target, next);
-      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'edit_file', summary: file, result: 'замен: ' + (replace_all ? count : 1) });
-      return text('Файл ' + file + ' изменён.');
+      if (target) await sftp.writeText(target.connId, rpath, next); else localWrite(file, next);
+      sendToRenderer('agent:action', { chatId: chat.chatId, tool: 'edit_file', summary: shown(target, file), result: 'замен: ' + (replace_all ? count : 1) });
+      return text('Файл ' + shown(target, file) + ' изменён.');
     }));
     return server;
   }
@@ -629,7 +631,7 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
       const mcpServers = [{ type: 'http', name: MCP_NAME, url: 'http://127.0.0.1:' + mcpPort + '/mcp', headers: [{ name: 'Authorization', value: 'Bearer ' + chat.token }] }];
       const restartNote = chat.restartNote ? '\n\nThe SSH Client app just restarted (update, manual relaunch, or crash recovery) and this conversation was resumed from the saved session - the previous agent process is gone, this is a fresh one.' : '';
       chat.debugFile = debugLogFile(chat);
-      const sessionMeta = { systemPrompt: { append: (chat.local ? SYSTEM_APPEND_LOCAL : SYSTEM_APPEND) + restartNote }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF, ...(chat.debugFile ? { extraArgs: { 'debug-file': chat.debugFile } } : {}) } } };
+      const sessionMeta = { systemPrompt: { append: SYSTEM_APPEND + restartNote }, claudeCode: { options: { disallowedTools: LOCAL_TOOLS_OFF, ...(chat.debugFile ? { extraArgs: { 'debug-file': chat.debugFile } } : {}) } } };
       let resumed = false;
       if (chat.resumeSessionId) {
         try {
@@ -691,14 +693,14 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   ipcMain.handle('agent:detect', async (event, { force } = {}) => detectClaude(!!force));
 
   ipcMain.handle('agent:start', async (event, { connId, profileId, fresh }) => {
-    const isLocal = connId === LOCAL_ID;
-    if (!isLocal && !getConnection(connId)) return { ok: false, error: 'SSH-сессия не подключена' };
+    // One chat for everything: it runs on this computer and reaches servers through `on`.
+    if (connId !== LOCAL_ID) return { ok: false, error: 'Чат с Claude теперь один — на этом компьютере' };
     for (const c of chats.values()) if (c.connId === connId) closeChat(c, 'Начат новый чат');
     const m = memFor(profileId);
     const isRestart = !!(m && m.sessionId && m.lastBootId && m.lastBootId !== PROCESS_BOOT_ID);
     if (m) { m.lastBootId = PROCESS_BOOT_ID; saveMemory(); }
     const chat = {
-      chatId: crypto.randomUUID(), connId, profileId: profileId || null, local: isLocal,
+      chatId: crypto.randomUUID(), connId, profileId: profileId || null,
       token: crypto.randomBytes(32).toString('hex'), state: 'starting', busy: false,
       pendingApprovals: new Set(),
       // "Always allow" decisions survive a deliberate new chat; conversation memory does not.
@@ -784,9 +786,6 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
   });
 
   return {
-    closeFor(connId) {
-      for (const c of [...chats.values()]) if (c.connId === connId) closeChat(c, 'SSH-сессия закрыта');
-    },
     shutdown() {
       for (const c of [...chats.values()]) closeChat(c, 'Приложение закрывается');
       try { mcpHttp.close(); } catch (_) {}

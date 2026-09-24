@@ -251,7 +251,7 @@ function paneHeadInner(g,t){
     (t.local?'':'<span class="ph-stats">'+statsHtml(t)+'</span>')+
     '<span class="ph-sp"></span>'+
     '<span class="ph-acts">'+
-      (!t.local&&live?'<button class="ibtn ph-claude" data-act="claude" title="AI-ассистент на этом сервере">'+IC('chat')+'</button><button class="ibtn" data-act="files" title="Файлы сервера (SFTP)">'+IC('folder')+'</button><i class="ph-sep"></i>':'')+
+      (!t.local&&live?'<button class="ibtn" data-act="files" title="Файлы сервера (SFTP)">'+IC('folder')+'</button><i class="ph-sep"></i>':'')+
       '<button class="ibtn" data-act="copy" title="Копировать выделение или весь буфер">'+IC('copy')+'</button>'+
       '<button class="ibtn" data-act="clear" title="Очистить экран">'+IC('eraser')+'</button>'+
       '<button class="ibtn" data-act="re" title="'+(t.local?'Перезапустить оболочку':'Переподключиться')+'">'+IC('refresh')+'</button>'+

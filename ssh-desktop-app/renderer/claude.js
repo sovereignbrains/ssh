@@ -1,5 +1,5 @@
 "use strict";
-/* ---------------- CLAUDE (Claude Code over ACP, acting on the SSH server) ---------------- */
+/* ---------------- CLAUDE (Claude Code over ACP: one chat on this computer, reaching servers via `on`) ---------------- */
 const CL={detect:null,connId:null,chats:{},drafts:{},attach:{},freshWanted:{},loaded:{},renderQueued:false,open:false,big:false,
   stick:true,render:{connId:null,html:[]}};
 let clPersistTimer=null;
@@ -121,12 +121,19 @@ function clOpenLightbox(src){
   document.addEventListener('keydown',onKey);
 }
 const CL_LOCAL={connId:'local',local:true,name:'Этот компьютер'};
-function clTargets(){return [CL_LOCAL,...fxLiveTabs()];}
-function clIsLocal(connId){return connId===CL_LOCAL.connId;}
+// One chat only. It runs here and reaches every connected server through the tools' `on` argument.
+function clTargets(){return [CL_LOCAL];}
 function clProfileId(connId){const t=clTab(connId);return t?(t.local?'local':t.session):null;}
 function clTargetIco(t){return t.local?'<span class="cl-pk-os cl-pk-local">'+IC('terminal')+'</span>':'<span class="cl-pk-os" style="--osc:'+osOf(t.os).color+'">'+IC(osOf(t.os).icon)+'</span>';}
-function clTargetSub(t){return t.local?'этот компьютер':t.user+'@'+t.host+(String(t.port)!=='22'?':'+t.port:'');}
-const CL_TOOL_LABELS={run_command:'Команда',run_command_secret:'Команда с секретом',read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',edit_file:'Правка файла'};
+function clTargetSub(t){
+  if(!t.local)return t.user+'@'+t.host+(String(t.port)!=='22'?':'+t.port:'');
+  const n=fxLiveTabs().length,m10=n%10,m100=n%100;
+  return n?'этот компьютер + '+n+' '+(m10===1&&m100!==11?'сервер':m10>=2&&m10<=4&&(m100<12||m100>14)?'сервера':'серверов'):'этот компьютер';
+}
+const CL_TOOL_LABELS={run_command:'Команда',run_command_secret:'Команда с секретом',run_command_remote:'Команда на сервере',run_command_remote_secret:'Команда на сервере с секретом',
+  read_file:'Чтение файла',list_directory:'Список папки',write_file:'Запись файла',write_file_remote:'Запись файла на сервере',edit_file:'Правка файла',edit_file_remote:'Правка файла на сервере'};
+// Approval keys carry _remote/_secret on top of the tool name; the tool card is found by the bare name.
+function clBaseTool(k){return String(k||'').replace(/_remote|_secret/g,'');}
 function clShortTool(name){const m=/^mcp__ssh__(.+)$/.exec(name||'');return m?m[1]:(name||'');}
 function clChatById(chatId){return Object.values(CL.chats).find(c=>c.chatId===chatId)||null;}
 function clTab(connId){return clTargets().find(t=>t.connId===connId)||null;}
@@ -175,20 +182,20 @@ function clItemHtml(it){
     return '<div class="cl-card cl-tool'+(ap&&ap.state==='pending'?' cl-approval pending':'')+'"'+(ap?' data-approval="'+ap.approvalId+'"':'')+'><div class="cl-card-h">'+IC(short==='run_command'?'terminal':short.includes('file')||short==='list_directory'?'folder':'settings')+' '+esc(label)+
       '<span class="pill '+st[0]+'" style="margin-left:auto"><span class="sdot"></span>'+st[1]+'</span></div>'+
       (subject?'<div class="cl-subject mono">'+esc(subject)+'</div>':'')+
-      (ap&&ap.detail?'<details '+(ap.tool!=='run_command'?'open':'')+' class="cl-out"><summary>'+(ap.tool==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(ap.detail)+'</pre></details>':'')+
+      (ap&&ap.detail?'<details '+(clBaseTool(ap.tool)!=='run_command'?'open':'')+' class="cl-out"><summary>'+(clBaseTool(ap.tool)==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(ap.detail)+'</pre></details>':'')+
       (ap?(ap.state==='pending'
-        ?'<div class="cl-actions"><span class="hint" style="margin:0 6px 0 0;align-self:center">Нужно ваше подтверждение</span><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для «'+esc(label)+'» на этом сервере">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
+        ?'<div class="cl-actions"><span class="hint" style="margin:0 6px 0 0;align-self:center">Нужно ваше подтверждение</span><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для «'+esc(label)+'»">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
         :'<div class="cl-actions"><span class="pill '+(ap.state==='allowed'?'on':ap.state==='denied'?'err':'off')+'"><span class="sdot"></span>'+(ap.state==='allowed'?'разрешено':ap.state==='denied'?'отклонено':'отменено')+'</span></div>'):'')+
       (out?'<details class="cl-out"><summary>вывод</summary><pre>'+esc(out.length>6000?out.slice(0,6000)+'\n…':out)+'</pre></details>':'')+'</div>';
   }
   if(it.kind==='approval'){
-    const titles={run_command:'Claude хочет выполнить команду на сервере',write_file:'Claude хочет записать файл',edit_file:'Claude хочет изменить файл'};
+    const titles={run_command:'Claude хочет выполнить команду',write_file:'Claude хочет записать файл',edit_file:'Claude хочет изменить файл'};
     const pending=it.state==='pending';
     return '<div class="cl-card cl-approval '+(pending?'pending':'')+'" data-approval="'+it.approvalId+'">'+
-      '<div class="cl-card-h">'+IC('shield')+' '+esc(titles[it.tool]||'Claude запрашивает действие')+'</div>'+
+      '<div class="cl-card-h">'+IC('shield')+' '+esc(titles[clBaseTool(it.tool)]||'Claude запрашивает действие')+'</div>'+
       '<pre class="cl-subject-pre">'+esc(it.summary)+'</pre>'+
-      (it.detail?'<details '+(it.tool!=='run_command'?'open':'')+' class="cl-out"><summary>'+(it.tool==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(it.detail)+'</pre></details>':'')+
-      (pending?'<div class="cl-actions"><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для этого на этом сервере">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
+      (it.detail?'<details '+(clBaseTool(it.tool)!=='run_command'?'open':'')+' class="cl-out"><summary>'+(clBaseTool(it.tool)==='run_command'?'подробности':'содержимое')+'</summary><pre>'+esc(it.detail)+'</pre></details>':'')+
+      (pending?'<div class="cl-actions"><button class="btn sm primary" data-allow="1">'+IC('check')+' Разрешить</button><button class="btn sm ghost" data-allow="1" data-always="1" title="Больше не спрашивать для этого">'+IC('check')+' Разрешать всегда</button><button class="btn sm danger" data-allow="0">'+IC('x')+' Отклонить</button></div>'
         :'<div class="cl-actions"><span class="pill '+(it.state==='allowed'?'on':it.state==='denied'?'err':'off')+'"><span class="sdot"></span>'+(it.state==='allowed'?'разрешено':it.state==='denied'?'отклонено':'отменено')+'</span></div>')+'</div>';
   }
   if(it.kind==='permission'){
@@ -215,7 +222,7 @@ function renderClaudeLog(){
   if(CL.render.connId!==CL.connId){CL.render={connId:CL.connId,html:[]};log.innerHTML='';}
   if(!list.length){
     if(CL.render.html.length||!log.firstElementChild){
-      log.innerHTML='<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude о сервере</h4><p>Например: «почему не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты и перезапусти сервис».</p></div>';
+      log.innerHTML='<div class="cl-empty">'+IC('claude','xl')+'<h4>Спросите Claude</h4><p>Он работает на этом компьютере и на всех подключённых серверах. Например: «почему на сервере не стартует nginx?», «сколько места на дисках и что занимает больше всего?», «обнови пакеты на сервере и перезапусти сервис».</p></div>';
       CL.render.html=[];
     }
   }else{
@@ -259,7 +266,7 @@ function renderClPicker(targets){
   b.disabled=false;
   b.innerHTML=clTargetIco(t)+'<span class="cl-pk-t">'+esc(t.name)+'</span>'+
     '<span class="cl-pk-sub">'+esc(clTargetSub(t))+'</span>'+IC('chev-down','cl-pk-chev');
-  b.title='Выбрать, где работает Claude';
+  b.title='Где работает Claude';
 }
 function openClMenu(){
   const row=(t)=>{
@@ -269,9 +276,13 @@ function openClMenu(){
       '<span class="cl-mi-t"><b>'+esc(t.name)+'</b><small>'+esc(t.local?clTargetSub(t):clTargetSub(t)+' · '+osLabel(t.os,t.osName))+'</small></span>'+
       st+'<span class="cl-mi-ck">'+(on?IC('check'):'')+'</span></button>';
   };
-  const liveIds=new Set(S.tabs.filter(t=>!t.local&&!t.closed).map(t=>t.session));
+  const live=fxLiveTabs(),liveIds=new Set(live.map(t=>t.session));
   const offline=S.sessions.filter(s=>!liveIds.has(s.id)).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,8);
   $('#clMenu').innerHTML='<div class="cl-menu-h">Где работает Claude</div>'+clTargets().map(row).join('')+
+    (live.length?'<div class="cl-menu-h">И на подключённых серверах</div>'+live.map(t=>
+      '<button class="cl-mi" data-do="openTab" data-arg="'+t.id+'" title="Открыть терминал сервера">'+clTargetIco(t)+
+        '<span class="cl-mi-t"><b>'+esc(t.name)+'</b><small>'+esc(clTargetSub(t)+' · '+osLabel(t.os,t.osName))+'</small></span>'+
+        '<span class="cl-mi-ck"></span></button>').join(''):'')+
     (offline.length?'<div class="cl-menu-h">Подключиться</div>'+offline.map(s=>
       '<button class="cl-mi" data-do="connect" data-arg="'+s.id+'">'+
         '<span class="cl-pk-os" style="--osc:'+osOf(s.os).color+'">'+IC(osOf(s.os).icon)+'</span>'+
@@ -333,9 +344,8 @@ function clStatusHtml(chat){
 }
 function renderClaude(){
   const box=$('#clBody');if(!box)return;
-  const tabs=fxLiveTabs(),targets=clTargets();
-  if(CL.connId&&!targets.some(t=>t.connId===CL.connId))CL.connId=null;
-  if(!CL.connId)CL.connId=tabs.length?tabs[0].connId:CL_LOCAL.connId;
+  const targets=clTargets();
+  CL.connId=CL_LOCAL.connId;
   clHydrate(CL.connId);
   renderClPicker(targets);
   const d=CL.detect;
@@ -349,12 +359,12 @@ function renderClaude(){
   box.innerHTML='<div class="cl-wrap">'+
     '<div class="cl-top">'+clStatusHtml(chat)+'<span class="hint" style="margin:0">'+esc(d&&d.version?d.version:'')+'</span><div style="flex:1"></div>'+
       '<span id="clUsage"></span>'+
-      '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда» для этого сервера">'+IC('trash')+'</button>'+
+      '<button class="ibtn" id="clForget" title="Забыть разговор и все «разрешать всегда»">'+IC('trash')+'</button>'+
       '<button class="btn sm ghost" id="clNew">'+IC('plus')+' Новый чат</button></div>'+
     '<div class="cl-log" id="clLog"></div>'+
     '<div class="cl-strip" id="clStrip"></div>'+
     '<div class="cl-compose"><div class="cl-attach" id="clAttach" hidden></div><div class="cl-box">'+
-      '<textarea id="clText" rows="1" placeholder="'+(clIsLocal(CL.connId)?'Спросите Claude об этом компьютере…':'Спросите Claude о сервере…')+'" spellcheck="false"></textarea>'+
+      '<textarea id="clText" rows="1" placeholder="Спросите Claude…" spellcheck="false"></textarea>'+
       '<input type="file" id="clFile" accept="image/*,text/*,.md,.json,.yml,.yaml,.toml,.ini,.conf,.cfg,.log,.csv,.tsv,.xml,.css,.scss,.less,.js,.mjs,.cjs,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.hpp,.cs,.php,.sh,.bash,.ps1,.sql,.env" multiple hidden>'+
       '<div class="cl-tools">'+
         '<button class="ibtn cl-clip" id="clClip" title="Прикрепить изображение или текстовый файл">'+IC('file')+'</button>'+
@@ -413,7 +423,7 @@ function renderClaude(){
     delete CL.chats[CL.connId];renderClaude();$('#clText').focus();
   };
   $('#clForget').onclick=async()=>{
-    const ok=await confirmModal({title:'Забыть чат с Claude?',text:'Клод забудет разговор с этим сервером и снова начнёт спрашивать подтверждение на каждое действие.',ok:'Забыть'});
+    const ok=await confirmModal({title:'Забыть чат с Claude?',text:'Claude забудет разговор и снова начнёт спрашивать подтверждение на каждое действие.',ok:'Забыть'});
     if(!ok)return;
     const c=CL.chats[CL.connId];
     if(c&&c.state!=='closed')await window.agentAPI.close(c.chatId);
@@ -519,10 +529,8 @@ async function clRetryAfterAuth(connId,content){
   clQueueRender();
 }
 /* ---- floating chat: launcher bottom-right, panel opens above it ---- */
-function openClaude(connId){
-  const f=focusedSshTab();
-  if(connId)CL.connId=connId;
-  else if(f&&!(CL.chats[CL.connId]&&CL.chats[CL.connId].busy))CL.connId=f.connId;
+function openClaude(){
+  CL.connId=CL_LOCAL.connId;
   CL.open=true;CL.stick=true;
   $('#clPop').hidden=false;
   syncClaudeInset();
@@ -766,7 +774,7 @@ if(window.agentAPI){
     const last=chat.items[chat.items.length-1];if(last&&(last.kind==='agent'||last.kind==='thought'))last.closed=true;
     const ap={kind:'approval',chatId:p.chatId,approvalId:p.approvalId,tool:p.tool,summary:p.summary,detail:p.detail,state:'pending'};
     // Attach to the tool card that asked, so the command appears once, with its buttons.
-    const owner=[...chat.items].reverse().find(i=>i.kind==='tool'&&clShortTool(i.toolName)===p.tool&&!i.approval&&i.status!=='completed'&&i.status!=='failed');
+    const owner=[...chat.items].reverse().find(i=>i.kind==='tool'&&clShortTool(i.toolName)===clBaseTool(p.tool)&&!i.approval&&i.status!=='completed'&&i.status!=='failed');
     if(owner)owner.approval=ap;else chat.items.push(ap);
     if(!CL.open)toast('Claude ждёт подтверждения: '+(CL_TOOL_LABELS[p.tool]||p.tool),'warn','Claude');
     clQueueRender();

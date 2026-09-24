@@ -590,7 +590,6 @@ function registerSshHandlers() {
             sendToRenderer('ssh:closed', { connId });
             stopTunnelsFor(connId, 'SSH-сессия закрыта');
             if (sftpService) sftpService.closeFor(connId);
-            if (agentService) agentService.closeFor(connId);
             connections.delete(connId);
             try { conn.end(); } catch (_) {}
           });
@@ -735,7 +734,6 @@ function registerSshHandlers() {
   ipcMain.on('ssh:disconnect', (event, { connId }) => {
     stopTunnelsFor(connId, 'SSH-сессия отключена');
     if (sftpService) sftpService.closeFor(connId);
-    if (agentService) agentService.closeFor(connId);
     const entry = connections.get(connId);
     if (entry) {
       try { entry.conn.end(); } catch (_) {}

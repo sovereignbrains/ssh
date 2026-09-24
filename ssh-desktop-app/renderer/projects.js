@@ -429,18 +429,16 @@ async function pjFiles(id){
 }
 async function pjClaude(id,extra){
   const p=pjProject(id);if(!p)return;
-  const where=p.place==='local'?'на этом компьютере':'на этом сервере';
-  const intro='Проект «'+p.name+'» (репозиторий '+p.repo+') лежит '+where+' в папке '+p.dir+'. Работай в ней.\n';
-  // Claude has its own target picker: the local computer, or the server this project lives on.
-  if(p.place==='local'){
-    CL.drafts[CL_LOCAL.connId]=intro+(extra||'');
-    openClaude(CL_LOCAL.connId);
-    return;
+  // One chat on this computer: a server project is reached by naming its user@host (the tools' `on`).
+  let where='на этом компьютере';
+  if(p.place!=='local'){
+    if(!(await pjEnsureConn(p)))return;
+    const t=fxLiveTabs().find(x=>x.connId===pjConnId(p));
+    where=t?'на сервере '+t.user+'@'+t.host:'на сервере';
   }
-  if(!(await pjEnsureConn(p)))return;
-  const connId=pjConnId(p);
-  CL.drafts[connId]=intro+(extra||'');
-  openClaude(connId);
+  const intro='Проект «'+p.name+'» (репозиторий '+p.repo+') лежит '+where+' в папке '+p.dir+'. Работай в ней.\n';
+  CL.drafts[CL_LOCAL.connId]=intro+(extra||'');
+  openClaude();
 }
 async function pjIssueClaude(id,number){
   const p=pjProject(id);if(!p)return;

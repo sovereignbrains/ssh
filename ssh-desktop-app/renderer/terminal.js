@@ -227,7 +227,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTermMenu();});
 
 function termAction(act,t){
   if(act==='files'){if(t.connId&&!t.closed)openFiles(t.connId);return;}
-  if(act==='claude'){if(t.connId&&!t.closed)openClaude(t.connId);return;}
   if(act==='detach'){detachPane(t.id);return;}
   if(act==='close'){closeTab(t.id);return;}
   const st=xtermState[t.id];
