@@ -28,6 +28,9 @@ function ensureXterm(tab){
   const term=new Terminal(opts);
   const fit=new FitAddon.FitAddon();
   term.loadAddon(fit);
+  // open() measures the character cell right away; on a detached element that comes out 0x0 and fit()
+  // then does nothing, leaving the terminal stuck at the default 80 columns.
+  xtermPool.appendChild(wrap);
   term.open(wrap);
   term.attachCustomKeyEventHandler(e=>!appShortcut(e));
   term.onData(data=>{
@@ -43,7 +46,6 @@ function ensureXterm(tab){
   wrap.addEventListener('contextmenu',e=>{e.preventDefault();openTermMenu(e.clientX,e.clientY,tab);});
   wrap.addEventListener('mousedown',e=>{if(e.button===1)startAutoscroll(e,tab);});
   term.textarea&&term.textarea.addEventListener('focus',()=>focusPane(tab.id,true));
-  xtermPool.appendChild(wrap);
   const st={term,fit,wrap};
   xtermState[tab.id]=st;
   return st;
@@ -60,7 +62,11 @@ function disposeXterm(tabId){
 function fitXterm(tabId){
   const st=xtermState[tabId];if(!st||!st.wrap.isConnected||st.wrap.parentElement===xtermPool)return;
   if(!st.wrap.clientWidth||!st.wrap.clientHeight)return;
-  try{st.fit.fit();}catch(e){}
+  try{
+    // No cell size yet (measured while hidden): a same-size resize() makes xterm measure it again.
+    if(!st.fit.proposeDimensions())st.term.resize(st.term.cols,st.term.rows);
+    st.fit.fit();
+  }catch(e){}
 }
 function fitActiveXterm(){
   const g=activeGroup();
