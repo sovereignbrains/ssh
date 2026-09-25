@@ -346,7 +346,56 @@ function listTargets() {
   return [...connections.entries()].map(([connId, e]) => ({ connId, label: e.label || connId }));
 }
 
-function runInTerminal(connId, command, timeoutMs) {
+/* ---- who owns the terminal. The agent's command is typed into the live shell, so when a program
+ * holds the foreground (an installer menu, vim, top) the command lines become that program's input,
+ * and a menu that redraws itself wipes their echo, so the user never sees what was typed (25.09.2026:
+ * four lines went into the packetlab menu as answers). Asked over a separate exec channel of the
+ * same connection, which the pty never sees: climb to the sshd process that owns this connection,
+ * take its child with a terminal (the user's shell) and compare the terminal's foreground process
+ * group with the shell's own. Linux procps only; anything else answers FG_UNKNOWN and the command
+ * goes through as before. */
+const FG_SCRIPT = [
+  'export LC_ALL=C',
+  'command -v ps >/dev/null 2>&1 || { echo FG_UNKNOWN; exit 0; }',
+  'p=$$',
+  'while [ -n "$p" ] && [ "$p" -gt 1 ]; do',
+  '  case "$(ps -o comm= -p "$p" 2>/dev/null)" in sshd*) break ;; esac',
+  '  p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d " ")',
+  'done',
+  'case "$(ps -o comm= -p "${p:-0}" 2>/dev/null)" in sshd*) ;; *) echo FG_UNKNOWN; exit 0 ;; esac',
+  "sh=$(ps -o pid=,tty= --ppid \"$p\" 2>/dev/null | awk '$2 != \"?\" {print $1; exit}')",
+  '[ -n "$sh" ] || { echo FG_UNKNOWN; exit 0; }',
+  'fg=$(ps -o tpgid= -p "$sh" 2>/dev/null | tr -d " ")',
+  'pg=$(ps -o pgid= -p "$sh" 2>/dev/null | tr -d " ")',
+  '[ -n "$fg" ] && [ "$fg" != "-1" ] || { echo FG_UNKNOWN; exit 0; }',
+  '[ "$fg" = "$pg" ] && { echo FG_SHELL; exit 0; }',
+  'echo "FG_BUSY $(ps -o args= -p "$fg" 2>/dev/null | cut -c1-120)"',
+  '',
+].join('\n');
+// A nested shell in the foreground (su, sudo -i, bash typed by hand) is still a prompt: typing is fine.
+const FG_SHELL_RE = /^(-|\S*\/)?(bash|sh|zsh|dash|ksh|mksh|fish|ash|tcsh|csh)(\s+-[a-zA-Z]+)*\s*$|^(-|\S*\/)?su(\s+(-|-l|--login|-\s*\S+))?\s*$|^(\S*\/)?sudo\s+(-[is]|su)\b/;
+
+async function terminalForeground(conn) {
+  const r = await execScript(conn, FG_SCRIPT, 4000);
+  const m = /^FG_BUSY(.*)$/m.exec(r.out || '');
+  if (!m) return null;                                     // shell at a prompt, or we could not tell
+  const args = m[1].trim();
+  return FG_SHELL_RE.test(args) ? null : (args || 'без имени');
+}
+
+async function runInTerminal(connId, command, timeoutMs) {
+  const entry = connections.get(connId);
+  if (entry && entry.conn && !termRuns.has(connId)) {
+    const busy = await terminalForeground(entry.conn);
+    if (busy) {
+      throw new Error('В терминале ' + (entry.label || connId) + ' сейчас работает программа «' + busy +
+        '» — команда не отправлена: её строки стали бы вводом этой программы. Выйдите из неё и повторите.');
+    }
+  }
+  return typeIntoTerminal(connId, command, timeoutMs);
+}
+
+function typeIntoTerminal(connId, command, timeoutMs) {
   return new Promise((resolve, reject) => {
     const entry = connections.get(connId);
     if (!entry || !entry.stream || entry.stream.destroyed) { reject(new Error('SSH-сессия не подключена')); return; }
