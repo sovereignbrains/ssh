@@ -152,6 +152,14 @@ class Vault {
     return JSON.parse(plaintext);
   }
 
+  // Current contents for the main process's own use - the Claude chat tunnel takes the packetlab
+  // session's SSH key from here (ssh-proxy.js). Only while unlocked; reads the file fresh, so what
+  // the renderer saved last is what comes back.
+  read() {
+    if (!this.key) throw new Error('Сейф заблокирован');
+    return JSON.parse(decrypt(this.key, readEnvelope(this.file)));
+  }
+
   // A copy of the live key, so a second factor can wrap it. Only while unlocked.
   exportKey() {
     if (!this.key) throw new Error('Сейф заблокирован');

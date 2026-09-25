@@ -1131,6 +1131,12 @@ app.whenReady().then(async () => {
   if (!config.deviceId) { config.deviceId = require('crypto').randomBytes(8).toString('hex'); saveConfig(); }
   vault = new Vault(path.join(dataDir(), VAULT_NAME), config.deviceId);
   loadKnownHosts();
+  // The Claude chat tunnel (ssh-proxy.js) takes the packetlab session's key from the vault and
+  // trusts only the host key the user has already accepted here.
+  require('./ssh-proxy').configure({
+    getVaultData: () => (vault && vault.isUnlocked() ? vault.read() : null),
+    knownHost: (host, port) => knownHosts[host + ':' + port] || null,
+  });
   registerVaultHandlers();
   registerHello({
     ipcMain, vaultStatus, saveConfig,

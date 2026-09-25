@@ -8,8 +8,6 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const https = require('https');
-const net = require('net');
 const crypto = require('crypto');
 const { spawn, execFile, execFileSync } = require('child_process');
 const { Readable, Writable } = require('stream');
@@ -81,51 +79,9 @@ function detectClaude(force) {
   });
 }
 
-// Claude Code's own network traffic normally rides whatever the OS considers the default route,
-// which is exactly what gets shuffled around by any local VPN/proxy client (sing-box-daemon,
-// singbox-tray, Sovereign's TUN mode, or whatever comes next) - a route flap or a client being
-// mid-restart there shouldn't be able to break the chat. Rather than special-casing any one of
-// those clients, probe reality directly: can we already reach the API with no proxy at all? Only
-// if that fails do we reach for a proxy - first the sing-box mixed-inbound port if something's
-// listening there, then the fully independent SSH tunnel (ssh-proxy.js), which works regardless
-// of what local client is or isn't running. All three are probed fresh before every chat start.
-const API_HOST = 'api.anthropic.com';
-const LOCAL_PROXY_PORT = 2080;
-function probeTcp(host, port, timeoutMs) {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port, timeout: timeoutMs });
-    const done = (ok) => { socket.destroy(); resolve(ok); };
-    socket.once('connect', () => done(true));
-    socket.once('timeout', () => done(false));
-    socket.once('error', () => done(false));
-  });
-}
-// Reaching the API is not the same as being allowed to use it. With sing-box down, this user's
-// plain ISP line (Russia) completes the TLS handshake with api.anthropic.com just fine, and every
-// request then comes back from Anthropic's edge as 403 {"type":"forbidden","message":"Request not
-// allowed"} - a country block, no request_id, bootstrap and /v1/messages alike (24.09.2026,
-// --debug-file logs). The old handshake-only probe called that "direct works", so the chat never
-// fell back to the SSH tunnel and sat on 403s until sing-box came back.
-//
-// So ask the edge where it thinks we are: /cdn-cgi/trace on the API host is answered by Cloudflare
-// itself (never reaches Anthropic's API) and reports loc=<country> for this exact path. A blocked
-// country, a failed handshake (DPI) or a timeout all mean "not direct". No loc line at all falls
-// back to the old answer: the handshake worked, so direct it is.
-const BLOCKED_LOC = new Set(['RU', 'BY', 'CN', 'HK', 'MO', 'IR', 'KP', 'SY', 'CU']);
-function probeDirect(timeoutMs) {
-  return new Promise((resolve) => {
-    const req = https.get({ host: API_HOST, path: '/cdn-cgi/trace', timeout: timeoutMs, agent: false }, (res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (d) => { body += d; });
-      res.on('end', () => resolve(!BLOCKED_LOC.has(((body.match(/^loc=(\w+)$/m) || [])[1] || '').toUpperCase())));
-      res.on('error', () => resolve(false));
-    });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
-  });
-}
-function probeLocalProxy(port, timeoutMs) { return probeTcp('127.0.0.1', port, timeoutMs); }
+// Claude Code's own traffic goes through the app's bridge (ssh-proxy.js), which picks direct,
+// sing-box's mixed port or an SSH tunnel to packetlab for every new connection - so sing-box can
+// come and go mid-conversation without the chat running into the country-block 403.
 
 // Anthropic SDK errors crossing the ACP wire tend to keep a status/request-id/response body even
 // after passing through JSON-RPC, but the journal UI (renderer/journal.js) only ever displays an
@@ -572,16 +528,11 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     const acp = await import('@agentclientprotocol/sdk');
     const workspace = workspaceDir();
 
-    let proxyUp = false;
-    let proxyUrl = null;
-    if (!(await probeDirect(1500))) {
-      proxyUp = await probeLocalProxy(LOCAL_PROXY_PORT, 300);
-      proxyUrl = 'http://127.0.0.1:' + LOCAL_PROXY_PORT;
-      if (!proxyUp) {
-        const bridgePort = await sshProxy.ensureIndependentProxy(2000).catch(() => null);
-        if (bridgePort) { proxyUp = true; proxyUrl = 'http://127.0.0.1:' + bridgePort; }
-      }
-    }
+    // Always the bridge: the way out is decided per connection there, not once here.
+    // If the bridge cannot listen at all, the chat goes out as the OS routes it - as before 1.3.36.
+    const bridgePort = await sshProxy.ensureBridge().catch(() => null);
+    const proxyUp = !!bridgePort;
+    const proxyUrl = proxyUp ? 'http://127.0.0.1:' + bridgePort : null;
     const env = {
       ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claude.path,
       ...(proxyUp ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}),
