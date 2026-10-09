@@ -698,6 +698,31 @@ module.exports = function registerAgent({ ipcMain, app, sendToRenderer, getConne
     return { ok: true };
   });
 
+  // A message while Claude is working: injected into the running turn (the adapter's
+  // `_session/steering`, advertised in its capabilities) instead of waiting for the turn to end.
+  // If the turn ended meanwhile the adapter answers `promptRequired` and it goes as a plain prompt.
+  ipcMain.handle('agent:steer', async (event, { chatId, content }) => {
+    const chat = chats.get(chatId);
+    if (!chat || !chat.ctx || !chat.session) return { ok: false, error: 'Claude ещё не готов' };
+    const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+    try {
+      const resp = await chat.ctx.request('_session/steering', {
+        sessionId: chat.session.sessionId, prompt: blocks, _meta: { steering: { idleBehavior: 'promptRequired' } },
+      });
+      if (resp && resp.outcome === 'injected') return { ok: true, mode: 'steered' };
+    } catch (e) {
+      logError('claude (steer)', e, errDetails(e));
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+    chat.busy = true;
+    chat.session.prompt(content).catch((e) => {
+      chat.busy = false;
+      logError('claude (prompt after steer)', e, errDetails(e));
+      sendToRenderer('agent:stop', { chatId, stopReason: 'error', error: (e && e.message) || String(e) });
+    });
+    return { ok: true, mode: 'prompt' };
+  });
+
   ipcMain.handle('agent:set-config-option', async (event, { chatId, configId, value }) => {
     const chat = chats.get(chatId);
     if (!chat || !chat.ctx || !chat.session) return { ok: false, error: 'Claude ещё не готов' };

@@ -248,14 +248,17 @@ function renderClaudeLog(){
 function clSyncSend(){
   const b=$('#clSend'),ta=$('#clText');if(!b||!ta)return;
   const chat=CL.chats[CL.connId];
-  const mode=chat&&chat.busy?(chat.state==='starting'?'wait':'stop'):'send';
+  // While Claude works: the arrow as soon as there is something typed (the message goes into the
+  // running turn), the square when the box is empty.
+  const hasInput=!!ta.value.trim()||clAttachList().length>0;
+  const mode=chat&&chat.busy?(chat.state==='starting'?'wait':(hasInput?'steer':'stop')):'send';
   if(b.dataset.mode!==mode){
     b.dataset.mode=mode;
-    b.className='cl-send '+mode;
+    b.className='cl-send '+(mode==='steer'?'send':mode);
     b.innerHTML=mode==='wait'?'<span class="spinner"></span>':IC(mode==='stop'?'stop':'arrow-up');
-    b.title=mode==='stop'?'Остановить ответ':mode==='wait'?'Claude запускается…':'Отправить (Enter)';
+    b.title=mode==='stop'?'Остановить ответ':mode==='wait'?'Claude запускается…':mode==='steer'?'Отправить сейчас, пока Claude работает (Enter)':'Отправить (Enter)';
   }
-  b.disabled=mode==='wait'||(mode==='send'&&!ta.value.trim()&&!clAttachList().length);
+  b.disabled=mode==='wait'||(mode==='send'&&!hasInput);
 }
 function clGrow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';}
 function renderClPicker(targets){
@@ -479,7 +482,22 @@ async function clSend(){
   const atts=clAttachList().slice();
   if((!text&&!atts.length)||!CL.connId)return;
   let chat=CL.chats[CL.connId];
-  if(chat&&(chat.busy||chat.state==='starting'))return;
+  if(chat&&chat.state==='starting')return;
+  if(chat&&chat.busy&&chat.state==='ready'){
+    // Claude is working: the message goes into the running turn (agent:steer), no stop needed.
+    ta.value='';delete CL.drafts[CL.connId];clGrow(ta);CL.stick=true;
+    CL.attach[CL.connId]=[];clRenderAttach();clSyncSend();
+    const content=clBuildContent(text,atts);
+    chat.items.push({kind:'user',text:text,attachments:atts});
+    clQueueRender();
+    const r=await window.agentAPI.steer(chat.chatId,content);
+    if(!r.ok){
+      chat.items.push({kind:'info',error:true,text:r.error});
+      if(!ta.value){ta.value=text;CL.drafts[CL.connId]=text;clGrow(ta);}
+      clQueueRender();clSyncSend();
+    }else if(r.mode==='prompt')chat.lastPrompt=content;
+    return;
+  }
   ta.value='';delete CL.drafts[CL.connId];clGrow(ta);CL.stick=true;
   CL.attach[CL.connId]=[];clRenderAttach();clSyncSend();
   const content=clBuildContent(text,atts);

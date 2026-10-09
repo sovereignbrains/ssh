@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('agentAPI', {
   loadTranscript: (profileId) => ipcRenderer.invoke('agent:load-transcript', { profileId }),
   saveTranscript: (profileId, items) => ipcRenderer.invoke('agent:save-transcript', { profileId, items }),
   prompt: (chatId, content) => ipcRenderer.invoke('agent:prompt', { chatId, content }),
+  steer: (chatId, content) => ipcRenderer.invoke('agent:steer', { chatId, content }),
   cancel: (chatId) => ipcRenderer.invoke('agent:cancel', { chatId }),
   setConfigOption: (chatId, configId, value) => ipcRenderer.invoke('agent:set-config-option', { chatId, configId, value }),
   close: (chatId) => ipcRenderer.invoke('agent:close', { chatId }),
